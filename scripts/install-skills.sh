@@ -409,6 +409,98 @@ if git remote get-url origin &>/dev/null; then
 fi
 
 # ============================================================
+# 阶段 5：技能配置
+# ============================================================
+info "阶段 5：技能配置..."
+echo ""
+
+# ── 5.1 smart-agent-memory：初始化 SQLite 数据库 ──────────
+SAM_DIR="$HOME/.openclaw/workspace/skills/openclaw-skills-smart-agent-memory"
+SAM_CLI="${SAM_DIR}/scripts/memory-cli.js"
+if [ -d "$SAM_DIR" ] && command -v node &>/dev/null; then
+  if node "$SAM_CLI" index &>/dev/null 2>&1; then
+    log "smart-agent-memory：SQLite 数据库已初始化"
+  else
+    warn "smart-agent-memory：初始化失败，请检查 Node.js 版本（需 >= 18）"
+  fi
+elif [ -d "$SAM_DIR" ]; then
+  warn "smart-agent-memory：未找到 node，跳过初始化（需手动运行：node ${SAM_CLI} index）"
+fi
+
+# ── 5.2 self-improving-agent：创建 .learnings 目录 ────────
+if [ -d "$HOME/.openclaw/workspace/skills/self-improving-agent" ]; then
+  mkdir -p "$HOME/.openclaw/workspace/.learnings"
+  for f in LEARNINGS.md ERRORS.md FEATURE_REQUESTS.md; do
+    if [ ! -f "$HOME/.openclaw/workspace/.learnings/$f" ]; then
+      echo "# ${f%.md}" > "$HOME/.openclaw/workspace/.learnings/$f"
+    fi
+  done
+  log "self-improving-agent：.learnings/ 目录已初始化"
+fi
+
+# ── 5.3 tavily-search-pro：配置 API Key ───────────────────
+if [ -d "$HOME/.openclaw/workspace/skills/tavily-search-pro" ]; then
+  # 检查是否已配置
+  if grep -q "TAVILY_API_KEY" "$HOME/.openclaw/workspace/.env" 2>/dev/null || \
+     [ -n "${TAVILY_API_KEY:-}" ]; then
+    log "tavily-search-pro：API Key 已配置"
+  else
+    echo ""
+    info "tavily-search-pro 需要 Tavily API Key（可在 https://tavily.com 免费申请）"
+    prompt "请输入 Tavily API Key（留空跳过）："
+    read -r TAVILY_KEY < /dev/tty 2>/dev/null || TAVILY_KEY=""
+    if [ -n "$TAVILY_KEY" ]; then
+      echo "TAVILY_API_KEY=${TAVILY_KEY}" >> "$HOME/.openclaw/workspace/.env"
+      # 同时写入 ~/.bashrc
+      if ! grep -q "TAVILY_API_KEY" "$HOME/.bashrc" 2>/dev/null; then
+        echo "export TAVILY_API_KEY=${TAVILY_KEY}" >> "$HOME/.bashrc"
+      fi
+      log "tavily-search-pro：API Key 已保存到 .env 和 ~/.bashrc"
+    else
+      warn "tavily-search-pro：跳过，如需使用请手动设置 TAVILY_API_KEY 环境变量"
+    fi
+  fi
+fi
+
+# ── 5.4 需要飞书 OAuth 的技能：打印手动配置提示 ────────────
+FEISHU_SKILLS=()
+[ -d "$HOME/.openclaw/workspace/skills/feishu-send-file" ] && FEISHU_SKILLS+=("feishu-send-file")
+[ -d "$HOME/.openclaw/skills/feishu-approval" ] && FEISHU_SKILLS+=("feishu-approval")
+
+if [ ${#FEISHU_SKILLS[@]} -gt 0 ]; then
+  echo ""
+  warn "以下技能需要飞书 OAuth 授权，请在 OpenClaw 中手动完成："
+  for s in "${FEISHU_SKILLS[@]}"; do
+    echo "    • $s"
+  done
+  echo "    授权方式：在飞书对话框中发送 /oauth 或按提示完成授权流程"
+fi
+
+# ── 5.5 mcporter：提示配置 MCP 服务器 ─────────────────────
+if [ -d "$HOME/.openclaw/workspace/skills/mcporter" ]; then
+  MCP_CFG="$HOME/.openclaw/config/mcp-servers.json"
+  if [ -f "$MCP_CFG" ]; then
+    log "mcporter：MCP 配置文件已存在"
+  else
+    warn "mcporter：尚未配置 MCP 服务器，如需使用请创建：${MCP_CFG}"
+  fi
+fi
+
+echo ""
+
+# ============================================================
+# 阶段 6：重启 Gateway 使技能生效
+# ============================================================
+info "阶段 6：重启 Gateway 使技能生效..."
+
+if command -v openclaw &>/dev/null; then
+  openclaw gateway restart 2>&1
+  log "Gateway 已重启，所有技能已生效"
+else
+  warn "未找到 openclaw CLI，请手动重启 Gateway：openclaw gateway restart"
+fi
+
+# ============================================================
 # 完成输出
 # ============================================================
 echo
@@ -416,13 +508,18 @@ echo "=================================================="
 echo "  ✅ OpenClaw 环境初始化完成！"
 echo "=================================================="
 echo "安装统计：成功 $SUCCESS，跳过 $SKIPPED，失败 $FAILED"
-echo "配置完成："
-echo "  ✅ git-crypt 加密"
-echo "  ✅ openclaw.json 软链接"
+echo ""
+echo "已完成配置："
+echo "  ✅ git-crypt 加密 + openclaw.json 软链接"
 echo "  ✅ workspace 实时同步服务"
-echo "⚠️  请备份 GPG 私钥：~/gpg-backup/openclaw-gpg-private.asc"
-echo "下一步："
-echo "  1. openclaw gateway restart"
-echo "  2. 手动在 OpenClaw 中配置 Cron Jobs"
-echo "  3. systemctl --user status openclaw-sync-main.service"
+echo "  ✅ smart-agent-memory 记忆库初始化"
+echo "  ✅ self-improving-agent .learnings 目录"
+echo "  ✅ Gateway 已重启"
+echo ""
+echo "待手动完成："
+echo "  ⚠️  在 OpenClaw 中配置 2 个 Cron Jobs（安全巡检/系统升级）"
+echo "  ⚠️  完成飞书 OAuth 授权（feishu-send-file / feishu-approval）"
+if [ -f "$HOME/gpg-backup/openclaw-gpg-private.asc" ]; then
+  echo "  ⚠️  备份 GPG 私钥到安全位置：~/gpg-backup/openclaw-gpg-private.asc"
+fi
 echo "=================================================="
