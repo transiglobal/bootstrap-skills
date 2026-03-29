@@ -1,121 +1,428 @@
 #!/bin/bash
-# =============================================================================
-# install-skills.sh — 传米科技 OpenClaw 基础技能一键安装脚本
-# 来源：https://github.com/transiglobal
-# 用法：
-#   本地安装：bash install-skills.sh
-#   远程安装：ssh user@host 'bash -s' < install-skills.sh
-# =============================================================================
+set -uo pipefail
 
-set -e
+# 颜色定义
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BLUE='\033[0;34m'; NC='\033[0m'
 
-# 颜色
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+# 辅助函数
+log()    { echo -e "${GREEN}[✓]${NC} $1"; }
+warn()   { echo -e "${YELLOW}[!]${NC} $1"; }
+fail()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
+info()   { echo -e "${BLUE}[i]${NC} $1"; }
+prompt() { echo -e "${YELLOW}[?]${NC} $1"; }
 
-log()  { echo -e "${GREEN}[✓]${NC} $1"; }
-warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-fail() { echo -e "${RED}[✗]${NC} $1"; }
+# 统计变量
+SUCCESS=0
+SKIPPED=0
+FAILED=0
 
-# 安装目录
-WORKSPACE_SKILLS="${HOME}/.openclaw/workspace/skills"
-GLOBAL_SKILLS="${HOME}/.openclaw/skills"
-ORG="https://github.com/transiglobal"
+# ============================================================
+# 阶段 0：依赖检查与安装
+# ============================================================
+info "阶段 0：检查依赖..."
 
-# 确保目录存在
-mkdir -p "$WORKSPACE_SKILLS"
-mkdir -p "$GLOBAL_SKILLS"
-
-echo ""
-echo "=================================================="
-echo "  传米科技 OpenClaw 基础技能安装器"
-echo "  来源: github.com/transiglobal"
-echo "=================================================="
-echo ""
-
-# =============================================================================
-# workspace skills（安装到 ~/.openclaw/workspace/skills/）
-# =============================================================================
-WORKSPACE_REPOS=(
-  "agent-browser:agent-browser"
-  "config-guardian:config-guardian"
-  "elatia-humanizer-zh:elatia-humanizer-zh"
-  "feishu-send-file:feishu-send-file"
-  "find-skills:find-skills"
-  "lobehub-skills-search-engine:lobehub-skills-search-engine"
-  "mcporter:mcporter"
-  "narrative-voice:narrative-voice"
-  "openclaw-cli:openclaw-cli"
-  "smart-agent-memory:openclaw-skills-smart-agent-memory"
-  "runesleo-systematic-debugging:runesleo-systematic-debugging"
-  "safe-install:safe-install"
-  "self-improving-agent:self-improving-agent"
-  "skill-vetter:skill-vetter"
-  "skillhub-preference:skillhub-preference"
-  "tavily-search-pro:tavily-search-pro"
-  "proactive-agent:proactive-agent"
-)
-
-# global skills（安装到 ~/.openclaw/skills/）
-GLOBAL_REPOS=(
-  "feishu-approval:feishu-approval"
-)
-
-install_skill() {
-  local repo="$1"
-  local dir_name="$2"
-  local target_dir="$3"
-  local dest="$target_dir/$dir_name"
-
-  if [ -d "$dest" ]; then
-    warn "已存在，跳过: $dir_name"
+check_and_install() {
+  local cmd=$1
+  local pkg=$2
+  if command -v "$cmd" &>/dev/null; then
+    log "$cmd 已安装"
     return 0
   fi
-
-  if git clone --depth=1 "$ORG/$repo.git" "$dest" 2>/dev/null; then
-    log "安装成功: $dir_name"
+  warn "$cmd 未安装，正在安装 $pkg..."
+  if sudo apt install -y "$pkg" &>/dev/null 2>&1; then
+    log "$pkg 安装成功"
   else
-    fail "安装失败: $repo"
-    return 1
+    # apt 源失败时尝试从 archive.ubuntu.com 下载 deb
+    warn "apt 安装失败，尝试从 Ubuntu 官方源下载..."
+    local DEB_FILE="/tmp/${pkg}.deb"
+    local DEB_URL=""
+    case "$pkg" in
+      inotify-tools)
+        # 先安装依赖 libinotifytools0
+        local DEP_FILE="/tmp/libinotifytools0.deb"
+        curl -fsSL "http://archive.ubuntu.com/ubuntu/pool/universe/i/inotify-tools/libinotifytools0_3.22.6.0-4_amd64.deb" -o "$DEP_FILE" 2>/dev/null && \
+          sudo dpkg -i "$DEP_FILE" &>/dev/null && rm -f "$DEP_FILE"
+        DEB_URL="http://archive.ubuntu.com/ubuntu/pool/universe/i/inotify-tools/inotify-tools_3.22.6.0-4_amd64.deb"
+        ;;
+      git-crypt)
+        DEB_URL="http://archive.ubuntu.com/ubuntu/pool/universe/g/git-crypt/git-crypt_0.7.0-0.1build3_amd64.deb"
+        ;;
+    esac
+    if [ -n "$DEB_URL" ] && curl -fsSL "$DEB_URL" -o "$DEB_FILE" 2>/dev/null && sudo dpkg -i "$DEB_FILE" &>/dev/null; then
+      rm -f "$DEB_FILE"
+      log "$pkg 安装成功（备用源）"
+    else
+      fail "$pkg 安装失败，请手动安装后重试"
+    fi
   fi
 }
 
-echo ">>> 安装 workspace skills..."
-SUCCESS=0
-FAIL=0
-for item in "${WORKSPACE_REPOS[@]}"; do
-  repo="${item%%:*}"
-  dir="${item##*:}"
-  if install_skill "$repo" "$dir" "$WORKSPACE_SKILLS"; then
-    ((SUCCESS++)) || true
+check_and_install git git
+check_and_install gpg gnupg
+check_and_install inotifywait inotify-tools
+
+# git-crypt 特殊处理
+if ! command -v git-crypt &>/dev/null; then
+  warn "git-crypt 未安装，尝试从 apt 安装..."
+  if sudo apt install -y git-crypt &>/dev/null; then
+    log "git-crypt 安装成功"
   else
-    ((FAIL++)) || true
+    warn "apt 安装失败，尝试从 Ubuntu 源下载..."
+    DEB_URL="http://archive.ubuntu.com/ubuntu/pool/universe/g/git-crypt/git-crypt_0.7.0-0.1build3_amd64.deb"
+    DEB_FILE="/tmp/git-crypt.deb"
+    if curl -fsSL "$DEB_URL" -o "$DEB_FILE" && sudo dpkg -i "$DEB_FILE"; then
+      log "git-crypt 安装成功"
+      rm -f "$DEB_FILE"
+    else
+      fail "git-crypt 安装失败"
+    fi
   fi
-done
-
-echo ""
-echo ">>> 安装 global skills..."
-for item in "${GLOBAL_REPOS[@]}"; do
-  repo="${item%%:*}"
-  dir="${item##*:}"
-  if install_skill "$repo" "$dir" "$GLOBAL_SKILLS"; then
-    ((SUCCESS++)) || true
-  else
-    ((FAIL++)) || true
-  fi
-done
-
-echo ""
-echo "=================================================="
-echo "  安装完成：成功 ${SUCCESS} 个，失败 ${FAIL} 个"
-echo "=================================================="
-echo ""
-
-if [ "$FAIL" -gt 0 ]; then
-  warn "部分技能安装失败，请检查网络或 GitHub 访问权限"
-  exit 1
+else
+  log "git-crypt 已安装"
 fi
 
-log "所有基础技能安装完成！重启 OpenClaw 会话后生效。"
+# ============================================================
+# 阶段 1：技能安装（含重复检测）
+# ============================================================
+info "阶段 1：技能安装..."
+
+# 提示输入 Token A（支持环境变量 OC_TOKEN_A 非交互传入）
+info "即将从 git.moguyn.cn 私有库下载技能"
+if [ -n "${OC_TOKEN_A:-}" ]; then
+  TOKEN_A="$OC_TOKEN_A"
+  info "使用环境变量 OC_TOKEN_A 提供的技能下载 Token"
+else
+  info "需要传米科技提供的技能下载 Token（仅用于本次下载，不会保存到任何地方）"
+  prompt "请输入技能下载 Token："
+  read -rs TOKEN_A < /dev/tty
+  echo
+fi
+
+if [ -z "$TOKEN_A" ]; then
+  warn "未提供 Token，跳过技能安装阶段"
+else
+  # 技能列表（格式：目录名|仓库名|功能描述|关键词|安装路径）
+  SKILLS=(
+    "agent-browser|agent-browser|浏览器自动化|browser|workspace"
+    "config-guardian|config-guardian|配置文件保护|config-guardian|workspace"
+    "elatia-humanizer-zh|elatia-humanizer-zh|去AI味润色|humanizer|workspace"
+    "feishu-send-file|feishu-send-file|发送文件到飞书|feishu-send|workspace"
+    "find-skills|find-skills|技能搜索安装|find-skill|workspace"
+    "lobehub-skills-search-engine|lobehub-skills-search-engine|技能搜索引擎|lobehub|workspace"
+    "mcporter|mcporter|MCP服务器管理|mcporter|workspace"
+    "narrative-voice|narrative-voice|叙事风格|narrative|workspace"
+    "openclaw-cli|openclaw-cli|CLI命令参考|openclaw-cli|workspace"
+    "openclaw-skills-smart-agent-memory|openclaw-skills-smart-agent-memory|长期记忆系统|smart-agent-memory|workspace"
+    "runesleo-systematic-debugging|runesleo-systematic-debugging|系统化调试|systematic-debug|workspace"
+    "safe-install|safe-install|安全安装工作流|safe-install|workspace"
+    "self-improving-agent|self-improving-agent|自我改进|self-improv|workspace"
+    "skill-vetter|skill-vetter|技能安全审查|skill-vetter|workspace"
+    "skillhub-preference|skillhub-preference|技能市场偏好|skillhub|workspace"
+    "tavily-search-pro|tavily-search-pro|Tavily高级搜索|tavily|workspace"
+    "proactive-agent|proactive-agent|主动行为框架|proactive|workspace"
+    "feishu-approval|feishu-approval|飞书审批发起|feishu-approval|global"
+  )
+
+  for skill_line in "${SKILLS[@]}"; do
+    IFS='|' read -r dir_name repo desc keyword location <<< "$skill_line"
+    
+    if [ "$location" = "workspace" ]; then
+      base_dir="$HOME/.openclaw/workspace/skills"
+    else
+      base_dir="$HOME/.openclaw/skills"
+    fi
+    
+    dest="$base_dir/$dir_name"
+    
+    # 精确匹配
+    if [ -d "$dest" ]; then
+      ((SKIPPED++))
+      continue
+    fi
+    
+    # 模糊匹配（SSH/pipe 模式下 /dev/tty 不可用时，默认跳过）
+    matched=$(find "$base_dir" -maxdepth 1 -type d -iname "*${keyword}*" 2>/dev/null | head -1)
+    if [ -n "$matched" ]; then
+      # 非交互模式判断：SSH pipe 或脚本 stdin 重定向时无 TTY
+      if [ -t 1 ] && [ -n "${TERM:-}" ] && [ -z "${OC_TOKEN_A:-}" ] || [ -t 0 ]; then
+        # 可以交互：弹出询问
+        prompt "检测到功能可能重复的技能："
+        echo "    准备安装：${dir_name}（${desc}）"
+        echo "    已有技能：${matched}"
+        echo
+        prompt "是否跳过安装？[y=跳过 / n=继续] (默认: y): "
+        read -r answer < /dev/tty 2>/dev/null || answer="y"
+        answer=${answer:-y}
+      else
+        warn "检测到功能重复：${dir_name} 与 $(basename "$matched")（非交互模式，默认跳过）"
+        answer="y"
+      fi
+      if [[ "$answer" =~ ^[Yy]$ ]]; then
+        ((SKIPPED++)) || true
+        continue
+      fi
+    fi
+    
+    # 克隆技能（克隆后移除 .git 子目录，避免被识别为 submodule 导致 git add 失败）
+    mkdir -p "$base_dir"
+    if git clone --depth=1 "https://${TOKEN_A}@git.moguyn.cn/transiglobal/${repo}.git" "$dest" &>/dev/null; then
+      rm -rf "${dest}/.git"
+      log "安装成功：${dir_name}"
+      ((SUCCESS++)) || true
+    else
+      warn "安装失败：${dir_name}"
+      ((FAILED++)) || true
+    fi
+  done
+fi
+
+# ============================================================
+# 阶段 2：部署 Cron 脚本 + 提示配置
+# ============================================================
+info "阶段 2：部署 Cron 脚本..."
+
+SCRIPTS_DIR="$HOME/.openclaw/workspace/scripts"
+mkdir -p "$SCRIPTS_DIR"
+
+# 安全巡检脚本
+AUDIT_SCRIPT="$SCRIPTS_DIR/nightly-security-audit.sh"
+if [ ! -f "$AUDIT_SCRIPT" ]; then
+  cat > "$AUDIT_SCRIPT" << 'EOF'
+#!/bin/bash
+# OpenClaw 每日安全巡检脚本（占位版本）
+# 请替换为完整版本
+echo "🛡️ 安全巡检运行中 - $(date '+%Y-%m-%d %H:%M:%S')"
+echo "✅ 完成（占位版本）"
+EOF
+  chmod +x "$AUDIT_SCRIPT"
+  log "创建：nightly-security-audit.sh"
+else
+  info "nightly-security-audit.sh 已存在，跳过"
+fi
+
+# 系统升级脚本
+UPGRADE_SCRIPT="$SCRIPTS_DIR/nightly-os-upgrade.sh"
+if [ ! -f "$UPGRADE_SCRIPT" ]; then
+  cat > "$UPGRADE_SCRIPT" << 'EOF'
+#!/bin/bash
+# OpenClaw 每日系统升级脚本（占位版本）
+# 请替换为完整版本
+echo "🔄 系统升级运行中 - $(date '+%Y-%m-%d %H:%M:%S')"
+echo "✅ 完成（占位版本）"
+EOF
+  chmod +x "$UPGRADE_SCRIPT"
+  log "创建：nightly-os-upgrade.sh"
+else
+  info "nightly-os-upgrade.sh 已存在，跳过"
+fi
+
+# 打印配置提示
+warn "请在 OpenClaw 中手动添加以下 2 个 Cron Jobs："
+echo
+echo "  任务 1：nightly-security-audit"
+echo "    计划：每天 03:00 (Asia/Shanghai)"
+echo "    执行：bash ~/.openclaw/workspace/scripts/nightly-security-audit.sh"
+echo "    推送：飞书私聊 → 老板"
+echo
+echo "  任务 2：nightly-os-upgrade"
+echo "    计划：每天 04:00 (Asia/Shanghai)"
+echo "    执行：bash ~/.openclaw/workspace/scripts/nightly-os-upgrade.sh"
+echo "    推送：飞书系统运维群"
+echo
+
+# ============================================================
+# 阶段 3：git-crypt 加密 + openclaw.json 软链接
+# ============================================================
+info "阶段 3：git-crypt 加密配置..."
+
+cd "$HOME/.openclaw/workspace"
+
+# 确保已有 git 仓库
+if [ ! -d ".git" ]; then
+  git init
+  git config user.name "OpenClaw Bot"
+  git config user.email "bot@transiglobal.com"
+  log "初始化 Git 仓库"
+fi
+
+# 初始化 git-crypt
+if [ ! -d ".git/git-crypt" ]; then
+  info "生成 GPG 密钥..."
+  HOSTNAME_SAFE=$(hostname | tr '.' '-')
+  cat > /tmp/gpg-batch.conf << EOF
+%no-protection
+Key-Type: RSA
+Key-Length: 4096
+Subkey-Type: RSA
+Subkey-Length: 4096
+Name-Real: ${HOSTNAME_SAFE}
+Name-Email: openclaw-${HOSTNAME_SAFE}@transiglobal.com
+Expire-Date: 0
+EOF
+  gpg --batch --generate-key /tmp/gpg-batch.conf 2>&1 | tail -3
+  rm -f /tmp/gpg-batch.conf
+  
+  GPG_KEY_ID=$(gpg --list-keys --keyid-format LONG | grep "^pub" | head -1 | awk '{print $2}' | cut -d'/' -f2)
+  
+  # 备份 GPG 密钥
+  mkdir -p ~/gpg-backup
+  gpg --export --armor "$GPG_KEY_ID" > ~/gpg-backup/openclaw-gpg-public.asc
+  gpg --export-secret-keys --armor "$GPG_KEY_ID" > ~/gpg-backup/openclaw-gpg-private.asc
+  chmod 600 ~/gpg-backup/openclaw-gpg-private.asc
+  log "GPG 密钥已备份到 ~/gpg-backup/"
+  
+  # 初始化 git-crypt
+  git-crypt init
+  git-crypt add-gpg-user "$GPG_KEY_ID" 2>&1 | tail -2
+  log "git-crypt 初始化完成"
+  
+  # 配置加密规则
+  cat > .gitattributes << 'ATTR_EOF'
+openclaw.json filter=git-crypt diff=git-crypt
+*.env         filter=git-crypt diff=git-crypt
+*.key         filter=git-crypt diff=git-crypt
+*.pem         filter=git-crypt diff=git-crypt
+ATTR_EOF
+  
+  git add .gitattributes
+  git commit -m "Configure git-crypt encryption rules" 2>/dev/null || true
+  log "加密规则已配置"
+else
+  info "git-crypt 已初始化，跳过"
+fi
+
+# openclaw.json 软链接
+OC_CONFIG="$HOME/.openclaw/openclaw.json"
+WS_CONFIG="$HOME/.openclaw/workspace/openclaw.json"
+
+if [ -f "$OC_CONFIG" ] && [ ! -L "$OC_CONFIG" ]; then
+  cp "$OC_CONFIG" "$WS_CONFIG"
+  mv "$OC_CONFIG" "${OC_CONFIG}.before-git-crypt"
+  ln -s "$WS_CONFIG" "$OC_CONFIG"
+  git add openclaw.json 2>/dev/null || true
+  git commit -m "Add encrypted openclaw.json" 2>/dev/null || true
+  log "openclaw.json 软链接已创建"
+elif [ -L "$OC_CONFIG" ]; then
+  info "openclaw.json 软链接已存在，跳过"
+fi
+
+# ============================================================
+# 阶段 4：Git 仓库 + inotify 实时同步
+# ============================================================
+info "阶段 4：配置 workspace 自动备份..."
+
+info "需要你的 Git 仓库访问凭证（此 URL 含 token，将保存到本机用于自动同步）"
+if [ -n "${OC_REMOTE_URL:-}" ]; then
+  REMOTE_URL="$OC_REMOTE_URL"
+  info "使用环境变量 OC_REMOTE_URL 提供的远程仓库地址"
+else
+  prompt "请输入远程仓库 URL（含 token，如 https://TOKEN@git.example.com/org/repo.git）"
+  prompt "留空则跳过配置远程仓库："
+  read -r REMOTE_URL < /dev/tty
+fi
+
+if [ -n "$REMOTE_URL" ]; then
+  cd "$HOME/.openclaw/workspace"
+  if git remote get-url origin &>/dev/null; then
+    git remote set-url origin "$REMOTE_URL"
+    log "远程仓库 URL 已更新"
+  else
+    git remote add origin "$REMOTE_URL"
+    log "远程仓库已添加"
+  fi
+fi
+
+# 部署 auto-sync.sh
+SYNC_SCRIPT="$HOME/.openclaw/scripts/auto-sync.sh"
+mkdir -p "$(dirname "$SYNC_SCRIPT")"
+
+cat > "$SYNC_SCRIPT" << 'EOF'
+#!/bin/bash
+REPO_DIR="$1"
+WEBHOOK_URL="${FEISHU_WEBHOOK_URL:-}"
+[ -z "$REPO_DIR" ] && { echo "用法: $0 <仓库目录>"; exit 1; }
+cd "$REPO_DIR" || exit 1
+
+send_notify() {
+  [ -n "$WEBHOOK_URL" ] && curl -s -X POST "$WEBHOOK_URL" \
+    -H 'Content-Type: application/json' \
+    -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"$1\"}}" 2>/dev/null || true
+}
+
+BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] 监听: $REPO_DIR (branch: $BRANCH)"
+
+while true; do
+  inotifywait -rq -e modify,create,delete,move --exclude '\.git' . 2>/dev/null
+  sleep 2
+  if ! git diff --quiet HEAD 2>/dev/null || [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    if ! git pull --rebase origin "$BRANCH" 2>&1; then
+      git status 2>/dev/null | grep -q "rebase in progress" && { git rebase --abort 2>/dev/null; send_notify "⚠️ Workspace 同步冲突，需手动处理"; continue; }
+    fi
+    git status --porcelain 2>/dev/null | grep -qE '^(UU|AA|DD)' && { send_notify "⚠️ Workspace 冲突: $(git status --porcelain | grep -E '^(UU|AA|DD)')"; continue; }
+    git add -A
+    git commit -m "auto: $(date '+%Y-%m-%d %H:%M:%S')" 2>/dev/null && \
+      { git push origin "$BRANCH" 2>&1 && echo "[$(date '+%H:%M:%S')] ✅ 同步完成" || send_notify "⚠️ 推送失败"; }
+  fi
+done
+EOF
+chmod +x "$SYNC_SCRIPT"
+log "auto-sync.sh 已部署"
+
+# 创建 systemd 服务
+SYSTEMD_DIR="$HOME/.config/systemd/user"
+mkdir -p "$SYSTEMD_DIR"
+
+cat > "$SYSTEMD_DIR/openclaw-sync-main.service" << EOF
+[Unit]
+Description=OpenClaw Workspace Auto Sync
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$HOME/.openclaw/scripts/auto-sync.sh $HOME/.openclaw/workspace
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload 2>/dev/null
+systemctl --user enable openclaw-sync-main.service 2>/dev/null
+systemctl --user restart openclaw-sync-main.service 2>/dev/null
+log "systemd 服务已启动"
+
+# 首次提交推送
+cd "$HOME/.openclaw/workspace"
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  git add -A
+  git commit -m "Initial commit: OpenClaw workspace setup" 2>/dev/null || true
+fi
+if git remote get-url origin &>/dev/null; then
+  BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
+  if git push -u origin "$BRANCH" 2>&1; then
+    log "首次推送成功"
+  else
+    warn "首次推送失败，请检查远程仓库配置"
+  fi
+fi
+
+# ============================================================
+# 完成输出
+# ============================================================
+echo
+echo "=================================================="
+echo "  ✅ OpenClaw 环境初始化完成！"
+echo "=================================================="
+echo "安装统计：成功 $SUCCESS，跳过 $SKIPPED，失败 $FAILED"
+echo "配置完成："
+echo "  ✅ git-crypt 加密"
+echo "  ✅ openclaw.json 软链接"
+echo "  ✅ workspace 实时同步服务"
+echo "⚠️  请备份 GPG 私钥：~/gpg-backup/openclaw-gpg-private.asc"
+echo "下一步："
+echo "  1. openclaw gateway restart"
+echo "  2. 手动在 OpenClaw 中配置 Cron Jobs"
+echo "  3. systemctl --user status openclaw-sync-main.service"
+echo "=================================================="
