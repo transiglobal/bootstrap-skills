@@ -438,9 +438,32 @@ if [ -d "$HOME/.openclaw/workspace/skills/self-improving-agent" ]; then
   log "self-improving-agent：.learnings/ 目录已初始化"
 fi
 
-# ── 5.3 tavily-search-pro：配置 API Key ───────────────────
+# ── 5.3 proactive-agent：复制 assets 到 workspace ─────────
+PROACTIVE_DIR="$HOME/.openclaw/workspace/skills/proactive-agent"
+if [ -d "${PROACTIVE_DIR}/assets" ]; then
+  ASSETS_COPIED=0
+  for asset in "${PROACTIVE_DIR}/assets/"*.md; do
+    fname=$(basename "$asset")
+    # 只复制不存在的文件，避免覆盖用户已有的配置
+    if [ ! -f "$HOME/.openclaw/workspace/$fname" ]; then
+      cp "$asset" "$HOME/.openclaw/workspace/$fname"
+      ((ASSETS_COPIED++)) || true
+    fi
+  done
+  # 创建 working-buffer.md
+  mkdir -p "$HOME/.openclaw/workspace/memory"
+  touch "$HOME/.openclaw/workspace/memory/working-buffer.md"
+  # 创建 SESSION-STATE.md
+  if [ ! -f "$HOME/.openclaw/workspace/SESSION-STATE.md" ]; then
+    echo "# SESSION-STATE" > "$HOME/.openclaw/workspace/SESSION-STATE.md"
+  fi
+  log "proactive-agent：assets 已复制（$ASSETS_COPIED 个新文件），SESSION-STATE.md 和 working-buffer.md 已创建"
+elif [ -d "$PROACTIVE_DIR" ]; then
+  warn "proactive-agent：assets 目录不存在，跳过（请手动复制 assets/*.md 到 workspace）"
+fi
+
+# ── 5.4 tavily-search-pro：配置 API Key ───────────────────
 if [ -d "$HOME/.openclaw/workspace/skills/tavily-search-pro" ]; then
-  # 检查是否已配置
   if grep -q "TAVILY_API_KEY" "$HOME/.openclaw/workspace/.env" 2>/dev/null || \
      [ -n "${TAVILY_API_KEY:-}" ]; then
     log "tavily-search-pro：API Key 已配置"
@@ -448,13 +471,15 @@ if [ -d "$HOME/.openclaw/workspace/skills/tavily-search-pro" ]; then
     echo ""
     info "tavily-search-pro 需要 Tavily API Key（可在 https://tavily.com 免费申请）"
     prompt "请输入 Tavily API Key（留空跳过）："
-    read -r TAVILY_KEY < /dev/tty 2>/dev/null || TAVILY_KEY=""
+    if { true < /dev/tty; } 2>/dev/null; then
+      read -r TAVILY_KEY < /dev/tty 2>/dev/null || TAVILY_KEY=""
+    else
+      TAVILY_KEY="${TAVILY_API_KEY:-}"
+    fi
     if [ -n "$TAVILY_KEY" ]; then
       echo "TAVILY_API_KEY=${TAVILY_KEY}" >> "$HOME/.openclaw/workspace/.env"
-      # 同时写入 ~/.bashrc
-      if ! grep -q "TAVILY_API_KEY" "$HOME/.bashrc" 2>/dev/null; then
+      grep -q "TAVILY_API_KEY" "$HOME/.bashrc" 2>/dev/null || \
         echo "export TAVILY_API_KEY=${TAVILY_KEY}" >> "$HOME/.bashrc"
-      fi
       log "tavily-search-pro：API Key 已保存到 .env 和 ~/.bashrc"
     else
       warn "tavily-search-pro：跳过，如需使用请手动设置 TAVILY_API_KEY 环境变量"
@@ -462,7 +487,18 @@ if [ -d "$HOME/.openclaw/workspace/skills/tavily-search-pro" ]; then
   fi
 fi
 
-# ── 5.4 需要飞书 OAuth 的技能：打印手动配置提示 ────────────
+# ── 5.5 mcporter：提示配置 MCP 服务器 ─────────────────────
+if [ -d "$HOME/.openclaw/workspace/skills/mcporter" ]; then
+  MCP_CFG="$HOME/.openclaw/config/mcp-servers.json"
+  if [ -f "$MCP_CFG" ]; then
+    log "mcporter：MCP 配置文件已存在"
+  else
+    warn "mcporter：尚未配置 MCP 服务器，如需使用请创建：${MCP_CFG}"
+    echo "        参考命令：mcporter config add <server-name> <url>"
+  fi
+fi
+
+# ── 5.6 需要飞书 OAuth 的技能：打印手动配置提示 ────────────
 FEISHU_SKILLS=()
 [ -d "$HOME/.openclaw/workspace/skills/feishu-send-file" ] && FEISHU_SKILLS+=("feishu-send-file")
 [ -d "$HOME/.openclaw/skills/feishu-approval" ] && FEISHU_SKILLS+=("feishu-approval")
@@ -474,16 +510,6 @@ if [ ${#FEISHU_SKILLS[@]} -gt 0 ]; then
     echo "    • $s"
   done
   echo "    授权方式：在飞书对话框中发送 /oauth 或按提示完成授权流程"
-fi
-
-# ── 5.5 mcporter：提示配置 MCP 服务器 ─────────────────────
-if [ -d "$HOME/.openclaw/workspace/skills/mcporter" ]; then
-  MCP_CFG="$HOME/.openclaw/config/mcp-servers.json"
-  if [ -f "$MCP_CFG" ]; then
-    log "mcporter：MCP 配置文件已存在"
-  else
-    warn "mcporter：尚未配置 MCP 服务器，如需使用请创建：${MCP_CFG}"
-  fi
 fi
 
 echo ""
@@ -514,11 +540,14 @@ echo "  ✅ git-crypt 加密 + openclaw.json 软链接"
 echo "  ✅ workspace 实时同步服务"
 echo "  ✅ smart-agent-memory 记忆库初始化"
 echo "  ✅ self-improving-agent .learnings 目录"
+echo "  ✅ proactive-agent assets + SESSION-STATE.md + working-buffer.md"
 echo "  ✅ Gateway 已重启"
 echo ""
 echo "待手动完成："
 echo "  ⚠️  在 OpenClaw 中配置 2 个 Cron Jobs（安全巡检/系统升级）"
 echo "  ⚠️  完成飞书 OAuth 授权（feishu-send-file / feishu-approval）"
+echo "  ⚠️  配置 Tavily API Key（如需搜索功能）：export TAVILY_API_KEY=xxx"
+echo "  ⚠️  配置 mcporter MCP 服务器（如需）"
 if [ -f "$HOME/gpg-backup/openclaw-gpg-private.asc" ]; then
   echo "  ⚠️  备份 GPG 私钥到安全位置：~/gpg-backup/openclaw-gpg-private.asc"
 fi
