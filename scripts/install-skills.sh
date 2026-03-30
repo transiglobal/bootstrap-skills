@@ -527,6 +527,35 @@ else
 fi
 
 # ============================================================
+# 阶段 7：清除各技能的 .git 目录，变为纯文件快照
+# ============================================================
+info "阶段 7：清除各技能 .git 目录，还原为纯文件..."
+
+GIT_CLEAN_COUNT=0
+SKILLS_BASE="$HOME/.openclaw/skills"
+WS_SKILLS_BASE="$HOME/.openclaw/workspace/skills"
+
+# 清理 global skills（~/.openclaw/skills/）
+for skill_git in "$SKILLS_BASE"/*/.git "$WS_SKILLS_BASE"/*/.git; do
+  [ -d "$skill_git" ] || continue
+  skill_dir="${skill_git%/.git}"
+  skill_name=$(basename "$skill_dir")
+  
+  # 跳过 bootstrap-skills 自身（它需要保留 .git 以便后续更新）
+  [ "$skill_name" = "bootstrap-skills" ] && continue
+  
+  rm -rf "$skill_git"
+  GIT_CLEAN_COUNT=$((GIT_CLEAN_COUNT + 1))
+  log "已清除：${skill_name}"
+done
+
+if [ "$GIT_CLEAN_COUNT" -gt 0 ]; then
+  log "共清除 $GIT_CLEAN_COUNT 个技能的 .git 目录"
+else
+  info "未发现需要清理的 .git 目录"
+fi
+
+# ============================================================
 # 完成输出
 # ============================================================
 echo
@@ -541,6 +570,7 @@ echo "  ✅ workspace 实时同步服务"
 echo "  ✅ smart-agent-memory 记忆库初始化"
 echo "  ✅ self-improving-agent .learnings 目录"
 echo "  ✅ proactive-agent assets + SESSION-STATE.md + working-buffer.md"
+echo "  ✅ 各技能 .git 目录已清除（变为纯文件快照）"
 echo "  ✅ Gateway 已重启"
 echo ""
 echo "待手动完成："
