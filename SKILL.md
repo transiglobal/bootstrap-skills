@@ -12,7 +12,7 @@ description: 传米科技 OpenClaw 完整环境初始化工具 v3.0。一键完�
 | 阶段 | 内容 |
 |------|------|
 | 0 | 依赖检查与自动安装（git/git-crypt/gpg/inotifywait）|
-| 1 | 重复技能检测 + 安装 18 个基础技能 |
+| 1 | 重复技能检测 + 安装 16 个基础技能 |
 | 2 | 部署 Cron 脚本 + 提示配置定时任务 |
 | 3 | git-crypt 加密 + openclaw.json 软链接 |
 | 4 | Git 仓库初始化 + inotify 实时同步服务 |
