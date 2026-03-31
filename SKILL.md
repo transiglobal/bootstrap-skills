@@ -25,13 +25,13 @@ description: 传米科技 OpenClaw 完整环境初始化工具 v3.0。一键完�
 | 用途 | 从 git.moguyn.cn 克隆技能 | auto-sync 长期推送备份 |
 | 保存 | ❌ 不保存，安装后消失 | ✅ 保存到目标机器本地 |
 
-## 安装的技能（18 个）
+## 安装的技能（16 个）
 
-### workspace skills（15 个）
-agent-browser、config-guardian、feishu-send-file、find-skills、lobehub-skills-search-engine、mcporter、openclaw-cli、openclaw-skills-smart-agent-memory、runesleo-systematic-debugging、safe-install、self-improving-agent、skill-vetter、skillhub-preference、tavily-search-pro、proactive-agent
+### global skills（11 个）
+agent-browser、feishu-send-file、find-skills、lobehub-skills-search-engine、mcporter、openclaw-skills-smart-agent-memory、self-improving-agent、skillhub-preference、tavily-search-pro、proactive-agent、feishu-approval
 
-### global skills（1 个）
-feishu-approval
+### workspace skills（5 个）
+config-guardian、openclaw-cli、runesleo-systematic-debugging、safe-install、skill-vetter
 
 ## 用法
 

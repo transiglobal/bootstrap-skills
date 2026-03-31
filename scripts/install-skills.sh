@@ -103,23 +103,21 @@ if [ -z "$TOKEN_A" ]; then
 else
   # 技能列表（格式：目录名|仓库名|功能描述|关键词|安装路径）
   SKILLS=(
-    "agent-browser|agent-browser|浏览器自动化|browser|workspace"
+    "agent-browser|agent-browser|浏览器自动化|browser|global"
     "config-guardian|config-guardian|配置文件保护|config-guardian|workspace"
-    "elatia-humanizer-zh|elatia-humanizer-zh|去AI味润色|humanizer|workspace"
-    "feishu-send-file|feishu-send-file|发送文件到飞书|feishu-send|workspace"
-    "find-skills|find-skills|技能搜索安装|find-skill|workspace"
-    "lobehub-skills-search-engine|lobehub-skills-search-engine|技能搜索引擎|lobehub|workspace"
-    "mcporter|mcporter|MCP服务器管理|mcporter|workspace"
-    "narrative-voice|narrative-voice|叙事风格|narrative|workspace"
+    "feishu-send-file|feishu-send-file|发送文件到飞书|feishu-send|global"
+    "find-skills|find-skills|技能搜索安装|find-skill|global"
+    "lobehub-skills-search-engine|lobehub-skills-search-engine|技能搜索引擎|lobehub|global"
+    "mcporter|mcporter|MCP服务器管理|mcporter|global"
     "openclaw-cli|openclaw-cli|CLI命令参考|openclaw-cli|workspace"
-    "openclaw-skills-smart-agent-memory|openclaw-skills-smart-agent-memory|长期记忆系统|smart-agent-memory|workspace"
+    "openclaw-skills-smart-agent-memory|openclaw-skills-smart-agent-memory|长期记忆系统|smart-agent-memory|global"
     "runesleo-systematic-debugging|runesleo-systematic-debugging|系统化调试|systematic-debug|workspace"
     "safe-install|safe-install|安全安装工作流|safe-install|workspace"
-    "self-improving-agent|self-improving-agent|自我改进|self-improv|workspace"
+    "self-improving-agent|self-improving-agent|自我改进|self-improv|global"
     "skill-vetter|skill-vetter|技能安全审查|skill-vetter|workspace"
-    "skillhub-preference|skillhub-preference|技能市场偏好|skillhub|workspace"
-    "tavily-search-pro|tavily-search-pro|Tavily高级搜索|tavily|workspace"
-    "proactive-agent|proactive-agent|主动行为框架|proactive|workspace"
+    "skillhub-preference|skillhub-preference|技能市场偏好|skillhub|global"
+    "tavily-search-pro|tavily-search-pro|Tavily高级搜索|tavily|global"
+    "proactive-agent|proactive-agent|主动行为框架|proactive|global"
     "feishu-approval|feishu-approval|飞书审批发起|feishu-approval|global"
   )
 
