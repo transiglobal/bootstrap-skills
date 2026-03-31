@@ -1,6 +1,9 @@
 #!/bin/bash
 set -uo pipefail
 
+# 脚本自身所在目录（用于访问同目录下的完整脚本文件）
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # 颜色定义
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BLUE='\033[0;34m'; NC='\033[0m'
 
@@ -182,32 +185,20 @@ info "阶段 2：部署 Cron 脚本..."
 SCRIPTS_DIR="$HOME/.openclaw/workspace/scripts"
 mkdir -p "$SCRIPTS_DIR"
 
-# 安全巡检脚本
+# 安全巡检脚本（完整版）
 AUDIT_SCRIPT="$SCRIPTS_DIR/nightly-security-audit.sh"
 if [ ! -f "$AUDIT_SCRIPT" ]; then
-  cat > "$AUDIT_SCRIPT" << 'EOF'
-#!/bin/bash
-# OpenClaw 每日安全巡检脚本（占位版本）
-# 请替换为完整版本
-echo "🛡️ 安全巡检运行中 - $(date '+%Y-%m-%d %H:%M:%S')"
-echo "✅ 完成（占位版本）"
-EOF
+  cp "$SELF_DIR/nightly-security-audit.sh" "$AUDIT_SCRIPT"
   chmod +x "$AUDIT_SCRIPT"
   log "创建：nightly-security-audit.sh"
 else
   info "nightly-security-audit.sh 已存在，跳过"
 fi
 
-# 系统升级脚本
+# 系统升级脚本（完整版）
 UPGRADE_SCRIPT="$SCRIPTS_DIR/nightly-os-upgrade.sh"
 if [ ! -f "$UPGRADE_SCRIPT" ]; then
-  cat > "$UPGRADE_SCRIPT" << 'EOF'
-#!/bin/bash
-# OpenClaw 每日系统升级脚本（占位版本）
-# 请替换为完整版本
-echo "🔄 系统升级运行中 - $(date '+%Y-%m-%d %H:%M:%S')"
-echo "✅ 完成（占位版本）"
-EOF
+  cp "$SELF_DIR/nightly-os-upgrade.sh" "$UPGRADE_SCRIPT"
   chmod +x "$UPGRADE_SCRIPT"
   log "创建：nightly-os-upgrade.sh"
 else
