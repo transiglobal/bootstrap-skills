@@ -1,6 +1,6 @@
 ---
 name: bootstrap-skills
-description: 传米科技 OpenClaw 完整环境初始化工具 v3.0。一键完成：重复检测+安装18个基础技能、配置Cron Jobs、git-crypt加密openclaw.json、workspace实时备份。触发词："安装基础技能"、"初始化技能"、"bootstrap skills"、"新机器部署"。
+description: 传米科技 OpenClaw 完整环境初始化工具 v3.0。一键完成：重复检测+安装16个基础技能、配置Cron Jobs、git-crypt加密openclaw.json、workspace实时备份。触发词："安装基础技能"、"初始化技能"、"bootstrap skills"、"新机器部署"。
 ---
 
 # Bootstrap Skills v3.0
@@ -27,8 +27,8 @@ description: 传米科技 OpenClaw 完整环境初始化工具 v3.0。一键完�
 
 ## 安装的技能（18 个）
 
-### workspace skills（17 个）
-agent-browser、config-guardian、elatia-humanizer-zh、feishu-send-file、find-skills、lobehub-skills-search-engine、mcporter、narrative-voice、openclaw-cli、openclaw-skills-smart-agent-memory、runesleo-systematic-debugging、safe-install、self-improving-agent、skill-vetter、skillhub-preference、tavily-search-pro、proactive-agent
+### workspace skills（15 个）
+agent-browser、config-guardian、feishu-send-file、find-skills、lobehub-skills-search-engine、mcporter、openclaw-cli、openclaw-skills-smart-agent-memory、runesleo-systematic-debugging、safe-install、self-improving-agent、skill-vetter、skillhub-preference、tavily-search-pro、proactive-agent
 
 ### global skills（1 个）
 feishu-approval
