@@ -545,6 +545,64 @@ else
 fi
 
 # ============================================================
+# 阶段 8：技能安装状态检查
+# ============================================================
+info "阶段 8：检查技能安装与配置状态..."
+
+SKILL_CHECKS=""
+# tavily-search-pro
+TAVILY_KEY=$(openclaw config get secrets.TAVILY_API_KEY 2>/dev/null | tr -d '\n' | grep -v "^null$" || echo "")
+if [ -d "$WS_SKILLS_BASE/tavily-search-pro" ]; then
+  if [ -n "$TAVILY_KEY" ]; then
+    SKILL_CHECKS="${SKILL_CHECKS}✅ tavily-search-pro：已配置\n"
+  else
+    SKILL_CHECKS="${SKILL_CHECKS}⚠️ tavily-search-pro：未配置 API Key（export TAVILY_API_KEY=xxx）\n"
+  fi
+fi
+
+# mcporter
+if [ -f "$HOME/.mcporter/mcporter.json" ]; then
+  MC_PORTER_CONFIGURED=$(grep -c "server\|mcpServers" "$HOME/.mcporter/mcporter.json" 2>/dev/null || echo "0")
+  if [ "$MC_PORTER_CONFIGURED" -gt 0 ]; then
+    SKILL_CHECKS="${SKILL_CHECKS}✅ mcporter：已配置\n"
+  else
+    SKILL_CHECKS="${SKILL_CHECKS}⚠️ mcporter：未配置（编辑 ~/.mcporter/mcporter.json）\n"
+  fi
+else
+  SKILL_CHECKS="${SKILL_CHECKS}⚠️ mcporter：未安装\n"
+fi
+
+# feishu OAuth
+FEISHU_BOT_TOKEN=$(openclaw config get channels.feishu.botToken 2>/dev/null | tr -d '\n' | grep -v "^null$" || echo "")
+if [ -n "$FEISHU_BOT_TOKEN" ]; then
+  SKILL_CHECKS="${SKILL_CHECKS}✅ feishu：已配置\n"
+else
+  SKILL_CHECKS="${SKILL_CHECKS}⚠️ feishu：未配置（运行 feishu OAuth 授权）\n"
+fi
+
+# git-crypt
+if [ -f "$HOME/.openclaw/openclaw.json" ]; then
+  SKILL_CHECKS="${SKILL_CHECKS}✅ openclaw.json：已就绪\n"
+else
+  SKILL_CHECKS="${SKILL_CHECKS}⚠️ openclaw.json：未找到\n"
+fi
+
+# GPG
+if command -v gpg &>/dev/null && [ -f "$HOME/.gnupg/pubring.gpg" ]; then
+  SKILL_CHECKS="${SKILL_CHECKS}✅ GPG：已配置\n"
+else
+  SKILL_CHECKS="${SKILL_CHECKS}⚠️ GPG：未配置\n"
+fi
+
+# Cron Jobs
+CRON_COUNT=$(openclaw cron list 2>/dev/null | grep -c "nightly-" || echo "0")
+if [ "$CRON_COUNT" -ge 2 ]; then
+  SKILL_CHECKS="${SKILL_CHECKS}✅ Cron Jobs：$CRON_COUNT 个已配置\n"
+else
+  SKILL_CHECKS="${SKILL_CHECKS}⚠️ Cron Jobs：仅 $CRON_COUNT 个（建议 2 个：安全巡检+系统升级）\n"
+fi
+
+# ============================================================
 # 完成输出
 # ============================================================
 echo
@@ -560,9 +618,11 @@ echo "  ✅ smart-agent-memory 记忆库初始化"
 echo "  ✅ self-improving-agent .learnings 目录"
 echo "  ✅ proactive-agent assets + SESSION-STATE.md + working-buffer.md"
 echo "  ✅ 各技能 .git 目录已清除（变为纯文件快照）"
-echo "  ✅ Gateway 已重启"
+echo "  ✅ Gateway 已重启（阶段 6）"
 echo ""
-echo "待手动完成："
+echo "技能配置状态："
+echo -e "$SKILL_CHECKS"
+echo "其他待手动完成："
 echo "  ⚠️  在 OpenClaw 中配置 2 个 Cron Jobs（安全巡检/系统升级）"
 echo "  ⚠️  完成飞书 OAuth 授权（feishu-send-file / feishu-approval）"
 echo "  ⚠️  配置 Tavily API Key（如需搜索功能）：export TAVILY_API_KEY=xxx"

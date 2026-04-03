@@ -50,5 +50,5 @@ ssh user@host 'bash -s' < ~/.openclaw/workspace/skills/bootstrap-skills/scripts/
 用户说"安装基础技能"、"初始化技能"、"新机器部署"时：
 1. 询问是本地安装还是远程安装
 2. 提醒准备好 Token A（传米科技提供）、Token B（Gitea 仓库 token）和 Tavily API Key（https://tavily.com 免费申请）
-3. 执行脚本
-4. 完成后提醒重启 OpenClaw 会话
+3. 执行脚本（脚本末尾会自动重启 Gateway + 检查技能配置状态）
+4. 脚本执行完毕后，将"技能配置状态"和"其他待手动完成"部分展示给用户
