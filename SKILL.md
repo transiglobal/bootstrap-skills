@@ -66,7 +66,6 @@ bash ~/.openclaw/workspace/skills/bootstrap-skills/scripts/install-skills.sh
 | `OC_INSTALL_MODE` | `local` / `remote`（由 Agent 调用前设置）|
 | `OC_REMOTE_HOST` | 远程目标机器 IP/域名（仅 remote 模式）|
 | `OC_REMOTE_USER` | 远程 SSH 用户名（仅 remote 模式，通常为 root）|
-| `OC_CRON_REPORT_TO` | cron 执行结果飞书私信汇报的目标用户 open_id（默认 ou_f32ac815f5dcefd246cd52869ecec6d8）|
 | `TAVILY_API_KEY` | Tavily API Key |
 
 ## Agent 调用指南
@@ -79,7 +78,9 @@ bash ~/.openclaw/workspace/skills/bootstrap-skills/scripts/install-skills.sh
    - **Tavily API Key**（可选）：https://tavily.com 免费申请
 3. 根据回答设置环境变量后执行脚本：
    - 本地：`OC_INSTALL_MODE=local bash install-skills.sh`
-   - 远程：`OC_INSTALL_MODE=local OC_REMOTE_HOST=<目标IP> OC_REMOTE_USER=<用户> bash install-skills.sh`（脚本自动 SSH 到目标注册 Cron 并飞书汇报）
+   - 远程：`OC_INSTALL_MODE=remote OC_REMOTE_HOST=<目标IP> OC_REMOTE_USER=<用户> bash install-skills.sh`
+     - 脚本自动从目标机器的 `~/.openclaw/openclaw.json` 获取 `channels.feishu.allowFrom[0]` 作为飞书通知目标用户
+     - 注册完成后飞书私信汇报给目标用户
 4. 脚本末尾自动重启 Gateway
 5. 脚本执行完毕后，由 Agent 自动完成：
    - 检查各技能配置状态并展示

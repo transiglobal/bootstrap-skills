@@ -251,11 +251,31 @@ else
   if [ -z "${OC_REMOTE_HOST:-}" ] || [ -z "${OC_REMOTE_USER:-}" ]; then
     warn "远程模式缺少 OC_REMOTE_HOST 或 OC_REMOTE_USER，无法注册 Cron Jobs"
   else
-    # OC_CRON_REPORT_TO：目标环境的用户 open_id（Agent 调用前传入）
-    remote_report_to="${OC_CRON_REPORT_TO:-ou_f32ac815f5dcefd246cd52869ecec6d8}"
-    info "注册 Cron Jobs（远程模式：${OC_REMOTE_USER}@${OC_REMOTE_HOST}，通知目标用户：${remote_report_to}）..."
+    info "注册 Cron Jobs（远程模式：${OC_REMOTE_USER}@${OC_REMOTE_HOST}）..."
 
     CRON_SSH="ssh -o StrictHostKeyChecking=no ${OC_REMOTE_USER}@${OC_REMOTE_HOST}"
+
+    # 从目标机器的 openclaw.json 自动获取第一个已授权用户的 open_id
+    REMOTE_OC_JSON=$($CRON_SSH "cat ~/.openclaw/openclaw.json" 2>/dev/null)
+    remote_report_to=$(echo "$REMOTE_OC_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    allow = d.get('channels', {}).get('feishu', {}).get('allowFrom', [])
+    if allow:
+        print(allow[0])
+    else:
+        print('')
+except:
+    print('')
+" 2>/dev/null)
+
+    if [ -z "$remote_report_to" ]; then
+      warn "无法从目标机器获取 open_id，默认使用本机配置"
+      remote_report_to="ou_f32ac815f5dcefd246cd52869ecec6d8"
+    else
+      info "目标环境已授权用户：${remote_report_to}"
+    fi
 
     $CRON_SSH "openclaw cron add \
       --name 'nightly-security-audit' \
@@ -283,7 +303,7 @@ else
       FEISHU_APP_SECRET="wxSaKaCSrA1qsPRp47jgobEVKL6b13sP"
       TOKEN_RESP=$(curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" \
         -H "Content-Type: application/json" \
-        -d "{\"app_id\":\"$FEISHU_APP_ID\",\"app_secret\":\"$FEISHU_APP_SECRET\"}")
+        -d "{"app_id":"$FEISHU_APP_ID","app_secret":"$FEISHU_APP_SECRET"}")
       TOKEN=$(echo "$TOKEN_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tenant_access_token',''))" 2>/dev/null)
       if [ -n "$TOKEN" ]; then
         PAYLOAD=$(python3 -c "
@@ -311,7 +331,6 @@ print(json.dumps(msg))
     fi
   fi
 fi
-
 
 
 # ============================================================
