@@ -66,6 +66,7 @@ bash ~/.openclaw/workspace/skills/bootstrap-skills/scripts/install-skills.sh
 | `OC_INSTALL_MODE` | `local` / `remote`（由 Agent 调用前设置）|
 | `OC_REMOTE_HOST` | 远程目标机器 IP/域名（仅 remote 模式）|
 | `OC_REMOTE_USER` | 远程 SSH 用户名（仅 remote 模式，通常为 root）|
+| `OC_CRON_REPORT_TO` | cron 执行结果飞书私信汇报的目标用户 open_id（默认 ou_f32ac815f5dcefd246cd52869ecec6d8）|
 | `TAVILY_API_KEY` | Tavily API Key |
 
 ## Agent 调用指南

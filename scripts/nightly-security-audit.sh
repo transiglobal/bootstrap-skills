@@ -1,9 +1,9 @@
 #!/bin/bash
 # OpenClaw 每日安全巡检脚本
 # 巡检内容：SSH 失败登录、异常进程、磁盘/内存、监听端口、 systemd 失败服务
-# 通知：飞书机器人 → 胡永鑫
+# 通知：飞书机器人 → OC_CRON_REPORT_TO（环境变量，部署时由 Agent 传入）
 
-FEISHU_USER="ou_01c2ea8bc1312dd73c93f1b972e5b021"
+FEISHU_USER="${OC_CRON_REPORT_TO:-ou_01c2ea8bc1312dd73c93f1b972e5b021}"
 FEISHU_APP_ID="cli_a940c6ac02785cd6"
 FEISHU_APP_SECRET="wxSaKaCSrA1qsPRp47jgobEVKL6b13sP"
 LOG_FILE="/root/.openclaw/workspace/scripts/security-audit.log"

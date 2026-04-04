@@ -219,6 +219,8 @@ INSTALL_MODE="${OC_INSTALL_MODE:-local}"
 
 if [ "$INSTALL_MODE" = "local" ]; then
   # 本地安装：通过 openclaw cron 直接注册
+  # OC_CRON_REPORT_TO：cron 任务执行后飞书私信汇报给谁（当前用户）
+  local_report_to="${OC_CRON_REPORT_TO:-ou_f32ac815f5dcefd246cd52869ecec6d8}"
   if command -v openclaw &>/dev/null; then
     info "注册 Cron Jobs（本地模式）..."
 
@@ -226,16 +228,16 @@ if [ "$INSTALL_MODE" = "local" ]; then
       --name "nightly-security-audit" \
       --schedule "0 3 * * *" \
       --tz "Asia/Shanghai" \
-      --command "bash $AUDIT_SCRIPT" \
+      --command "OC_CRON_REPORT_TO=${local_report_to} bash $AUDIT_SCRIPT" \
       --notify-channel feishu \
-      --to "user:ou_f32ac815f5dcefd246cd52869ecec6d8" \
+      --to "user:${local_report_to}" \
       2>&1 | grep -v "^$" || true
 
     openclaw cron add \
       --name "nightly-os-upgrade" \
       --schedule "0 4 * * *" \
       --tz "Asia/Shanghai" \
-      --command "bash $UPGRADE_SCRIPT" \
+      --command "OC_CRON_REPORT_TO=${local_report_to} bash $UPGRADE_SCRIPT" \
       --notify-channel feishu \
       --to "chat:oc_e10aaa9b9dbf9d4d2a42796169b2855e" \
       2>&1 | grep -v "^$" || true
@@ -249,50 +251,50 @@ else
   if [ -z "${OC_REMOTE_HOST:-}" ] || [ -z "${OC_REMOTE_USER:-}" ]; then
     warn "远程模式缺少 OC_REMOTE_HOST 或 OC_REMOTE_USER，无法注册 Cron Jobs"
   else
-    info "注册 Cron Jobs（远程模式：${OC_REMOTE_USER}@${OC_REMOTE_HOST}）..."
+    # OC_CRON_REPORT_TO：目标环境的用户 open_id（Agent 调用前传入）
+    remote_report_to="${OC_CRON_REPORT_TO:-ou_f32ac815f5dcefd246cd52869ecec6d8}"
+    info "注册 Cron Jobs（远程模式：${OC_REMOTE_USER}@${OC_REMOTE_HOST}，通知目标用户：${remote_report_to}）..."
 
-    CRON_RESULT=$(ssh -o StrictHostKeyChecking=no \
-      "${OC_REMOTE_USER}@${OC_REMOTE_HOST}" \
-      "openclaw cron add \
-        --name 'nightly-security-audit' \
-        --schedule '0 3 * * *' \
-        --tz 'Asia/Shanghai' \
-        --command 'bash $AUDIT_SCRIPT' \
-        --notify-channel feishu \
-        --to 'user:ou_f32ac815f5dcefd246cd52869ecec6d8' 2>&1" \
-      && ssh -o StrictHostKeyChecking=no \
-      "${OC_REMOTE_USER}@${OC_REMOTE_HOST}" \
-      "openclaw cron add \
-        --name 'nightly-os-upgrade' \
-        --schedule '0 4 * * *' \
-        --tz 'Asia/Shanghai' \
-        --command 'bash $UPGRADE_SCRIPT' \
-        --notify-channel feishu \
-        --to 'chat:oc_e10aaa9b9dbf9d4d2a42796169b2855e' 2>&1")
+    CRON_SSH="ssh -o StrictHostKeyChecking=no ${OC_REMOTE_USER}@${OC_REMOTE_HOST}"
 
+    $CRON_SSH "openclaw cron add \
+      --name 'nightly-security-audit' \
+      --schedule '0 3 * * *' \
+      --tz 'Asia/Shanghai' \
+      --command 'OC_CRON_REPORT_TO=${remote_report_to} bash $AUDIT_SCRIPT' \
+      --notify-channel feishu \
+      --to 'user:${remote_report_to}' 2>&1" &
+    PID1=$!
+
+    $CRON_SSH "openclaw cron add \
+      --name 'nightly-os-upgrade' \
+      --schedule '0 4 * * *' \
+      --tz 'Asia/Shanghai' \
+      --command 'OC_CRON_REPORT_TO=${remote_report_to} bash $UPGRADE_SCRIPT' \
+      --notify-channel feishu \
+      --to 'user:${remote_report_to}' 2>&1" &
+    PID2=$!
+
+    wait $PID1 $PID2
     if [ $? -eq 0 ]; then
       log "Cron Jobs 远程注册完成"
-
-      # 飞书私信汇报
-      FEISHU_USER_ID="ou_f32ac815f5dcefd246cd52869ecec6d8"
+      # 注册成功后，飞书私信汇报给目标用户
       FEISHU_APP_ID="cli_a940c6ac02785cd6"
       FEISHU_APP_SECRET="wxSaKaCSrA1qsPRp47jgobEVKL6b13sP"
-
       TOKEN_RESP=$(curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" \
         -H "Content-Type: application/json" \
         -d "{\"app_id\":\"$FEISHU_APP_ID\",\"app_secret\":\"$FEISHU_APP_SECRET\"}")
       TOKEN=$(echo "$TOKEN_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tenant_access_token',''))" 2>/dev/null)
-
       if [ -n "$TOKEN" ]; then
         PAYLOAD=$(python3 -c "
 import json
 msg = {
-  'receive_id': '$FEISHU_USER_ID',
+  'receive_id': '$remote_report_to',
   'msg_type': 'post',
   'content': json.dumps({
     'zh_cn': {
       'title': '✅ Cron Jobs 注册完成',
-      'content': [[{'tag': 'text', 'text': '目标机器：${OC_REMOTE_HOST}\n已注册任务：\n  • nightly-security-audit（每天 03:00）\n  • nightly-os-upgrade（每天 04:00）'}]]
+      'content': [[{'tag': 'text', 'text': '目标机器：${OC_REMOTE_HOST}\n已注册任务：\n  • nightly-security-audit（每天 03:00）\n  • nightly-os-upgrade（每天 04:00）\n\n任务执行结果将在每天定时发送到此私信。'}]]
     }
   })
 }
@@ -305,10 +307,12 @@ print(json.dumps(msg))
         log "飞书私信已发送"
       fi
     else
-      warn "Cron Jobs 远程注册失败：$CRON_RESULT"
+      warn "Cron Jobs 远程注册失败，请检查目标机器的 openclaw 是否正常"
     fi
   fi
 fi
+
+
 
 # ============================================================
 # 阶段 3：git-crypt 加密 + openclaw.json 软链接
