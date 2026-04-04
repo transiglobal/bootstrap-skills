@@ -14,6 +14,22 @@ fail()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 info()   { echo -e "${BLUE}[i]${NC} $1"; }
 prompt() { echo -e "${YELLOW}[?]${NC} $1"; }
 
+# ── 安装模式检测（自动判断本地/远程）─────────────────
+# SSH 会话：PID 1 的父进程为 sshd；local TTY 为本地
+detect_install_mode() {
+  if [ -n "${OC_INSTALL_MODE:-}" ]; then
+    return
+  fi
+  if [ -n "${SSH_CLIENT:-}" ] || [ -n "${SSH_TTY:-}" ] || \
+     pstree -s $$ 2>/dev/null | grep -q sshd; then
+    OC_INSTALL_MODE="remote"
+  else
+    OC_INSTALL_MODE="local"
+  fi
+}
+detect_install_mode
+info "安装模式：${OC_INSTALL_MODE}"
+
 # 统计变量
 SUCCESS=0
 SKIPPED=0
@@ -178,7 +194,7 @@ else
 fi
 
 # ============================================================
-# 阶段 2：部署 Cron 脚本 + 提示配置
+# 阶段 2：部署 Cron 脚本 + 注册定时任务
 # ============================================================
 info "阶段 2：部署 Cron 脚本..."
 
@@ -205,19 +221,78 @@ else
   info "nightly-os-upgrade.sh 已存在，跳过"
 fi
 
-# 打印配置提示
-warn "请在 OpenClaw 中手动添加以下 2 个 Cron Jobs："
-echo
-echo "  任务 1：nightly-security-audit"
-echo "    计划：每天 03:00 (Asia/Shanghai)"
-echo "    执行：bash ~/.openclaw/workspace/scripts/nightly-security-audit.sh"
-echo "    推送：飞书私聊 → 老板"
-echo
-echo "  任务 2：nightly-os-upgrade"
-echo "    计划：每天 04:00 (Asia/Shanghai)"
-echo "    执行：bash ~/.openclaw/workspace/scripts/nightly-os-upgrade.sh"
-echo "    推送：飞书系统运维群"
-echo
+# ── 判断安装模式 ──────────────────────────────────────
+# OC_INSTALL_MODE 由调用方传入：local | remote
+INSTALL_MODE="${OC_INSTALL_MODE:-local}"
+
+if [ "$INSTALL_MODE" = "local" ]; then
+  # 本地安装：通过 openclaw cron 直接注册
+  if command -v openclaw &>/dev/null; then
+    info "注册 Cron Jobs（本地模式）..."
+
+    # 任务1：安全巡检
+    openclaw cron add \
+      --name "nightly-security-audit" \
+      --schedule "0 3 * * *" \
+      --tz "Asia/Shanghai" \
+      --command "bash $AUDIT_SCRIPT" \
+      --notify-channel feishu \
+      --to "user:ou_f32ac815f5dcefd246cd52869ecec6d8" \
+      2>&1 | grep -v "^$" || true
+
+    # 任务2：系统升级
+    openclaw cron add \
+      --name "nightly-os-upgrade" \
+      --schedule "0 4 * * *" \
+      --tz "Asia/Shanghai" \
+      --command "bash $UPGRADE_SCRIPT" \
+      --notify-channel feishu \
+      --to "chat:oc_e10aaa9b9dbf9d4d2a42796169b2855e" \
+      2>&1 | grep -v "^$" || true
+
+    log "Cron Jobs 注册完成"
+  else
+    warn "未找到 openclaw CLI，无法自动注册 Cron Jobs"
+    echo
+    warn "请在 OpenClaw 中手动添加以下 2 个 Cron Jobs："
+    echo
+    echo "  任务 1：nightly-security-audit"
+    echo "    计划：每天 03:00 (Asia/Shanghai)"
+    echo "    执行：bash $AUDIT_SCRIPT"
+    echo "    推送：飞书私聊 → 老板"
+    echo
+    echo "  任务 2：nightly-os-upgrade"
+    echo "    计划：每天 04:00 (Asia/Shanghai)"
+    echo "    执行：bash $UPGRADE_SCRIPT"
+    echo "    推送：飞书系统运维群"
+  fi
+else
+  # 远程安装：提示用户在目标机器上手动注册
+  echo
+  warn "远程安装模式：需在目标机器上手动注册 Cron Jobs"
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "⚠️  请在目标机器上执行以下命令注册定时任务："
+  echo
+  echo "  # 任务 1：安全巡检（每天 03:00）"
+  echo "  openclaw cron add \\"
+  echo "    --name \"nightly-security-audit\" \\"
+  echo "    --schedule \"0 3 * * *\" \\"
+  echo "    --tz \"Asia/Shanghai\" \\"
+  echo "    --command \"bash $AUDIT_SCRIPT\" \\"
+  echo "    --notify-channel feishu \\"
+  echo "    --to \"user:ou_f32ac815f5dcefd246cd52869ecec6d8\""
+  echo
+  echo "  # 任务 2：系统升级（每天 04:00）"
+  echo "  openclaw cron add \\"
+  echo "    --name \"nightly-os-upgrade\" \\"
+  echo "    --schedule \"0 4 * * *\" \\"
+  echo "    --tz \"Asia/Shanghai\" \\"
+  echo "    --command \"bash $UPGRADE_SCRIPT\" \\"
+  echo "    --notify-channel feishu \\"
+  echo "    --to \"chat:oc_e10aaa9b9dbf9d4d2a42796169b2855e\""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+fi
 
 # ============================================================
 # 阶段 3：git-crypt 加密 + openclaw.json 软链接
@@ -296,28 +371,78 @@ elif [ -L "$OC_CONFIG" ]; then
 fi
 
 # ============================================================
-# 阶段 4：Git 仓库 + inotify 实时同步
+# 阶段 4：Git 仓库初始化（自动创建 + 推送）
 # ============================================================
 info "阶段 4：配置 workspace 自动备份..."
 
-info "需要你的 Git 仓库访问凭证（此 URL 含 token，将保存到本机用于自动同步）"
-if [ -n "${OC_REMOTE_URL:-}" ]; then
-  REMOTE_URL="$OC_REMOTE_URL"
-  info "使用环境变量 OC_REMOTE_URL 提供的远程仓库地址"
-else
-  prompt "请输入远程仓库 URL（含 token，如 https://TOKEN@git.example.com/org/repo.git）"
-  prompt "留空则跳过配置远程仓库："
-  read -r REMOTE_URL < /dev/tty
-fi
+# ── 收集 Gitea 信息（必填）──────────────────────────────
+gather_gitea_info() {
+  if [ -n "${OC_GITEA_URL:-}" ] && [ -n "${OC_GITEA_USER:-}" ] && [ -n "${OC_GITEA_TOKEN:-}" ]; then
+    GITEA_URL="${OC_GITEA_URL}"; GITEA_USER="${OC_GITEA_USER}"; GITEA_TOKEN="${OC_GITEA_TOKEN}"
+    info "使用环境变量提供的 Gitea 配置"
+    return 0
+  fi
 
-if [ -n "$REMOTE_URL" ]; then
+  # 交互采集
+  prompt "Gitea 服务器地址（如 https://gitea.example.com，留空则跳过）："
+  read -r GITEA_URL < /dev/tty
+  if [ -z "$GITEA_TOKEN" ]; then
+    prompt "Gitea 用户名："
+    read -r GITEA_USER < /dev/tty
+    prompt "Gitea Access Token（需具有创建仓库和推送权限）："
+    read -rs GITEA_TOKEN < /dev/tty
+    echo
+  fi
+
+  if [ -z "$GITEA_URL" ] || [ -z "$GITEA_USER" ] || [ -z "$GITEA_TOKEN" ]; then
+    warn "Gitea 信息不完整，跳过 workspace 备份配置"
+    return 1
+  fi
+  return 0
+}
+
+gather_gitea_info || SKIP_GITEA=1
+
+# ── 自动创建仓库（通过 Gitea API）──────────────────────
+if [ -z "${SKIP_GITEA:-}" ]; then
+  REPO_NAME="openclaw-workspace"
+  API_BASE="${GITEA_URL%/}/api/v1"
+
+  # 检查仓库是否已存在
+  HTTP_CHECK=$(curl -s -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer ${GITEA_TOKEN}" \
+    "${API_BASE}/repos/${GITEA_USER}/${REPO_NAME}" 2>/dev/null)
+
+  if [ "$HTTP_CHECK" = "404" ]; then
+    info "仓库不存在，正在自动创建..."
+    HTTP_CREATE=$(curl -s -o /dev/null -w "%{http_code}" \
+      -X POST \
+      -H "Authorization: Bearer ${GITEA_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "{\"name\":\"${REPO_NAME}\",\"private\":true,\"auto_init\":false}" \
+      "${API_BASE}/user/repos" 2>/dev/null)
+    if [ "$HTTP_CREATE" = "201" ]; then
+      log "仓库 ${GITEA_USER}/${REPO_NAME} 创建成功"
+    else
+      warn "仓库创建失败（HTTP $HTTP_CREATE），将尝试直接添加 remote"
+    fi
+  elif [ "$HTTP_CHECK" = "200" ]; then
+    log "仓库 ${GITEA_USER}/${REPO_NAME} 已存在"
+  else
+    warn "检查仓库失败（HTTP $HTTP_CHECK），将尝试直接添加 remote"
+  fi
+
+  # 构造 remote URL（优先 HTTPS，token 带在 URL 中）
+  REMOTE_URL="${GITEA_URL%/}/${GITEA_USER}/${REPO_NAME}.git"
+  REMOTE_URL_WITH_AUTH="${GITEA_URL%/}/${GITEA_USER}:${GITEA_TOKEN}@${REMOTE_URL#*/}"
+
   cd "$HOME/.openclaw/workspace"
   if git remote get-url origin &>/dev/null; then
-    git remote set-url origin "$REMOTE_URL"
-    log "远程仓库 URL 已更新"
+    git remote set-url origin "$REMOTE_URL_WITH_AUTH"
+    log "远程仓库 URL 已更新为 ${GITEA_USER}/${REPO_NAME}"
   else
-    git remote add origin "$REMOTE_URL"
-    log "远程仓库已添加"
+    git remote add origin "$REMOTE_URL_WITH_AUTH"
+    log "远程仓库已添加为 ${GITEA_USER}/${REPO_NAME}"
   fi
 fi
 
@@ -555,21 +680,49 @@ echo "安装统计：成功 $SUCCESS，跳过 $SKIPPED，失败 $FAILED"
 echo ""
 echo "已完成配置："
 echo "  ✅ git-crypt 加密 + openclaw.json 软链接"
-echo "  ✅ workspace 实时同步服务"
+if [ -z "${SKIP_GITEA:-}" ]; then
+  echo "  ✅ workspace 备份 → ${GITEA_USER}/${REPO_NAME:-openclaw-workspace}"
+  echo "  ✅ inotify 实时同步服务（systemd 管理）"
+else
+  echo "  ⚠  workspace 备份跳过（未提供 Gitea 配置）"
+fi
 echo "  ✅ smart-agent-memory 记忆库初始化"
 echo "  ✅ self-improving-agent .learnings 目录"
 echo "  ✅ proactive-agent assets + SESSION-STATE.md + working-buffer.md"
 echo "  ✅ 各技能 .git 目录已清除（变为纯文件快照）"
 echo "  ✅ Gateway 已重启"
 echo ""
+if [ "$INSTALL_MODE" = "remote" ]; then
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "⚠  远程安装：Cron Jobs 未自动注册"
+  echo "请在目标机器上手动执行以下命令注册："
+  echo ""
+  echo "  openclaw cron add \\"
+  echo "    --name nightly-security-audit \\"
+  echo "    --schedule '0 3 * * *' --tz Asia/Shanghai \\"
+  echo "    --command 'bash $AUDIT_SCRIPT' \\"
+  echo "    --notify-channel feishu \\"
+  echo "    --to 'user:ou_f32ac815f5dcefd246cd52869ecec6d8'"
+  echo ""
+  echo "  openclaw cron add \\"
+  echo "    --name nightly-os-upgrade \\"
+  echo "    --schedule '0 4 * * *' --tz Asia/Shanghai \\"
+  echo "    --command 'bash $UPGRADE_SCRIPT' \\"
+  echo "    --notify-channel feishu \\"
+  echo "    --to 'chat:oc_e10aaa9b9dbf9d4d2a42796169b2855e'"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+fi
 echo "待 Agent 完成后："
-echo "  ⚠️  Agent 将检查各技能配置状态并显示结果"
-echo "  ⚠️  Agent 将配置 Tavily API Key（如已提供）"
+echo "  ⚠  Agent 将检查各技能配置状态并显示结果"
+echo "  ⚠  Agent 将配置 Tavily API Key（如已提供）"
 echo "  ⚠  其他待手动完成："
-echo "     - 在 OpenClaw 中配置 2 个 Cron Jobs（安全巡检/系统升级）"
+if [ "$INSTALL_MODE" = "local" ]; then
+  echo "     - Cron Jobs 已自动注册（如需修改：openclaw cron list）"
+fi
 echo "     - 完成飞书 OAuth 授权（feishu-send-file / feishu-approval）"
 echo "     - mcporter MCP 服务器（如需）"
 if [ -f "$HOME/gpg-backup/openclaw-gpg-private.asc" ]; then
-  echo "  ⚠  备份 GPG 私钥到安全位置：~/gpg-backup/openclaw-gpg-private.asc"
+  echo "     - 备份 GPG 私钥到安全位置：~/gpg-backup/openclaw-gpg-private.asc"
 fi
 echo "=================================================="
