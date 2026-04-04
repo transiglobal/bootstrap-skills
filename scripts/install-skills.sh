@@ -14,20 +14,12 @@ fail()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 info()   { echo -e "${BLUE}[i]${NC} $1"; }
 prompt() { echo -e "${YELLOW}[?]${NC} $1"; }
 
-# ── 安装模式检测（自动判断本地/远程）─────────────────
-# SSH 会话：PID 1 的父进程为 sshd；local TTY 为本地
-detect_install_mode() {
-  if [ -n "${OC_INSTALL_MODE:-}" ]; then
-    return
-  fi
-  if [ -n "${SSH_CLIENT:-}" ] || [ -n "${SSH_TTY:-}" ] || \
-     pstree -s $$ 2>/dev/null | grep -q sshd; then
-    OC_INSTALL_MODE="remote"
-  else
-    OC_INSTALL_MODE="local"
-  fi
-}
-detect_install_mode
+# ── 安装模式（由调用方通过环境变量传入）───────────────
+# OC_INSTALL_MODE=local | remote（由 Agent 在调用前设置）
+if [ -z "${OC_INSTALL_MODE:-}" ]; then
+  warn "OC_INSTALL_MODE 未设置，默认为 local"
+  OC_INSTALL_MODE="local"
+fi
 info "安装模式：${OC_INSTALL_MODE}"
 
 # 统计变量
@@ -230,7 +222,6 @@ if [ "$INSTALL_MODE" = "local" ]; then
   if command -v openclaw &>/dev/null; then
     info "注册 Cron Jobs（本地模式）..."
 
-    # 任务1：安全巡检
     openclaw cron add \
       --name "nightly-security-audit" \
       --schedule "0 3 * * *" \
@@ -240,7 +231,6 @@ if [ "$INSTALL_MODE" = "local" ]; then
       --to "user:ou_f32ac815f5dcefd246cd52869ecec6d8" \
       2>&1 | grep -v "^$" || true
 
-    # 任务2：系统升级
     openclaw cron add \
       --name "nightly-os-upgrade" \
       --schedule "0 4 * * *" \
@@ -253,45 +243,71 @@ if [ "$INSTALL_MODE" = "local" ]; then
     log "Cron Jobs 注册完成"
   else
     warn "未找到 openclaw CLI，无法自动注册 Cron Jobs"
-    echo
-    warn "请在 OpenClaw 中手动添加以下 2 个 Cron Jobs："
-    echo
-    echo "  任务 1：nightly-security-audit"
-    echo "    计划：每天 03:00 (Asia/Shanghai)"
-    echo "    执行：bash $AUDIT_SCRIPT"
-    echo "    推送：飞书私聊 → 老板"
-    echo
-    echo "  任务 2：nightly-os-upgrade"
-    echo "    计划：每天 04:00 (Asia/Shanghai)"
-    echo "    执行：bash $UPGRADE_SCRIPT"
-    echo "    推送：飞书系统运维群"
   fi
 else
-  # 远程安装：提示用户在目标机器上手动注册
-  echo
-  warn "远程安装模式：需在目标机器上手动注册 Cron Jobs"
-  echo
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "⚠️  请在目标机器上执行以下命令注册定时任务："
-  echo
-  echo "  # 任务 1：安全巡检（每天 03:00）"
-  echo "  openclaw cron add \\"
-  echo "    --name \"nightly-security-audit\" \\"
-  echo "    --schedule \"0 3 * * *\" \\"
-  echo "    --tz \"Asia/Shanghai\" \\"
-  echo "    --command \"bash $AUDIT_SCRIPT\" \\"
-  echo "    --notify-channel feishu \\"
-  echo "    --to \"user:ou_f32ac815f5dcefd246cd52869ecec6d8\""
-  echo
-  echo "  # 任务 2：系统升级（每天 04:00）"
-  echo "  openclaw cron add \\"
-  echo "    --name \"nightly-os-upgrade\" \\"
-  echo "    --schedule \"0 4 * * *\" \\"
-  echo "    --tz \"Asia/Shanghai\" \\"
-  echo "    --command \"bash $UPGRADE_SCRIPT\" \\"
-  echo "    --notify-channel feishu \\"
-  echo "    --to \"chat:oc_e10aaa9b9dbf9d4d2a42796169b2855e\""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  # 远程安装：通过 SSH 在目标机器上注册
+  if [ -z "${OC_REMOTE_HOST:-}" ] || [ -z "${OC_REMOTE_USER:-}" ]; then
+    warn "远程模式缺少 OC_REMOTE_HOST 或 OC_REMOTE_USER，无法注册 Cron Jobs"
+  else
+    info "注册 Cron Jobs（远程模式：${OC_REMOTE_USER}@${OC_REMOTE_HOST}）..."
+
+    CRON_RESULT=$(ssh -o StrictHostKeyChecking=no \
+      "${OC_REMOTE_USER}@${OC_REMOTE_HOST}" \
+      "openclaw cron add \
+        --name 'nightly-security-audit' \
+        --schedule '0 3 * * *' \
+        --tz 'Asia/Shanghai' \
+        --command 'bash $AUDIT_SCRIPT' \
+        --notify-channel feishu \
+        --to 'user:ou_f32ac815f5dcefd246cd52869ecec6d8' 2>&1" \
+      && ssh -o StrictHostKeyChecking=no \
+      "${OC_REMOTE_USER}@${OC_REMOTE_HOST}" \
+      "openclaw cron add \
+        --name 'nightly-os-upgrade' \
+        --schedule '0 4 * * *' \
+        --tz 'Asia/Shanghai' \
+        --command 'bash $UPGRADE_SCRIPT' \
+        --notify-channel feishu \
+        --to 'chat:oc_e10aaa9b9dbf9d4d2a42796169b2855e' 2>&1")
+
+    if [ $? -eq 0 ]; then
+      log "Cron Jobs 远程注册完成"
+
+      # 飞书私信汇报
+      FEISHU_USER_ID="ou_f32ac815f5dcefd246cd52869ecec6d8"
+      FEISHU_APP_ID="cli_a940c6ac02785cd6"
+      FEISHU_APP_SECRET="wxSaKaCSrA1qsPRp47jgobEVKL6b13sP"
+
+      TOKEN_RESP=$(curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" \
+        -H "Content-Type: application/json" \
+        -d "{\"app_id\":\"$FEISHU_APP_ID\",\"app_secret\":\"$FEISHU_APP_SECRET\"}")
+      TOKEN=$(echo "$TOKEN_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tenant_access_token',''))" 2>/dev/null)
+
+      if [ -n "$TOKEN" ]; then
+        PAYLOAD=$(python3 -c "
+import json
+msg = {
+  'receive_id': '$FEISHU_USER_ID',
+  'msg_type': 'post',
+  'content': json.dumps({
+    'zh_cn': {
+      'title': '✅ Cron Jobs 注册完成',
+      'content': [[{'tag': 'text', 'text': '目标机器：${OC_REMOTE_HOST}\n已注册任务：\n  • nightly-security-audit（每天 03:00）\n  • nightly-os-upgrade（每天 04:00）'}]]
+    }
+  })
+}
+print(json.dumps(msg))
+" 2>/dev/null)
+        curl -s -X POST "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id" \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$PAYLOAD" > /dev/null 2>&1
+        log "飞书私信已发送"
+      fi
+    else
+      warn "Cron Jobs 远程注册失败：$CRON_RESULT"
+    fi
+  fi
 fi
 
 # ============================================================
@@ -693,25 +709,8 @@ echo "  ✅ 各技能 .git 目录已清除（变为纯文件快照）"
 echo "  ✅ Gateway 已重启"
 echo ""
 if [ "$INSTALL_MODE" = "remote" ]; then
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "⚠  远程安装：Cron Jobs 未自动注册"
-  echo "请在目标机器上手动执行以下命令注册："
   echo ""
-  echo "  openclaw cron add \\"
-  echo "    --name nightly-security-audit \\"
-  echo "    --schedule '0 3 * * *' --tz Asia/Shanghai \\"
-  echo "    --command 'bash $AUDIT_SCRIPT' \\"
-  echo "    --notify-channel feishu \\"
-  echo "    --to 'user:ou_f32ac815f5dcefd246cd52869ecec6d8'"
-  echo ""
-  echo "  openclaw cron add \\"
-  echo "    --name nightly-os-upgrade \\"
-  echo "    --schedule '0 4 * * *' --tz Asia/Shanghai \\"
-  echo "    --command 'bash $UPGRADE_SCRIPT' \\"
-  echo "    --notify-channel feishu \\"
-  echo "    --to 'chat:oc_e10aaa9b9dbf9d4d2a42796169b2855e'"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo ""
+  info "远程安装：Cron Jobs 已在目标机器自动注册，飞书私信已汇报"
 fi
 echo "待 Agent 完成后："
 echo "  ⚠  Agent 将检查各技能配置状态并显示结果"

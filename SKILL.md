@@ -48,9 +48,11 @@ bash ~/.openclaw/workspace/skills/bootstrap-skills/scripts/install-skills.sh
 
 ### SSH 远程安装
 ```bash
-# 自动检测远程模式（SSH 连接），也可显式传入：
-OC_INSTALL_MODE=remote ssh user@host 'bash -s' < \
-  ~/.openclaw/workspace/skills/bootstrap-skills/scripts/install-skills.sh
+# 由 Agent 设置 OC_REMOTE_HOST / OC_REMOTE_USER 后调用：
+OC_INSTALL_MODE=remote \
+OC_REMOTE_HOST=43.134.173.17 \
+OC_REMOTE_USER=root \
+bash ~/.openclaw/workspace/skills/bootstrap-skills/scripts/install-skills.sh
 ```
 
 ### 环境变量（全部可选）
@@ -61,18 +63,22 @@ OC_INSTALL_MODE=remote ssh user@host 'bash -s' < \
 | `OC_GITEA_URL` | Gitea 服务器地址 |
 | `OC_GITEA_USER` | Gitea 用户名 |
 | `OC_GITEA_TOKEN` | Gitea Access Token |
-| `OC_INSTALL_MODE` | `local` / `remote`（自动检测时可覆盖）|
+| `OC_INSTALL_MODE` | `local` / `remote`（由 Agent 调用前设置）|
+| `OC_REMOTE_HOST` | 远程目标机器 IP/域名（仅 remote 模式）|
+| `OC_REMOTE_USER` | 远程 SSH 用户名（仅 remote 模式，通常为 root）|
 | `TAVILY_API_KEY` | Tavily API Key |
 
 ## Agent 调用指南
 
 用户说"安装基础技能"、"初始化技能"、"新机器部署"时：
-1. 确认是本地安装还是远程安装（脚本会自动检测 SSH）
+1. 询问是本地安装还是远程安装
 2. 提醒准备好：
    - **Token A**（传米科技提供）：技能下载
    - **Gitea Access Token**：具有创建仓库和推送权限（用户自己的 Gitea 服务器）
    - **Tavily API Key**（可选）：https://tavily.com 免费申请
-3. 执行脚本
+3. 根据回答设置环境变量后执行脚本：
+   - 本地：`OC_INSTALL_MODE=local bash install-skills.sh`
+   - 远程：`OC_INSTALL_MODE=local OC_REMOTE_HOST=<目标IP> OC_REMOTE_USER=<用户> bash install-skills.sh`（脚本自动 SSH 到目标注册 Cron 并飞书汇报）
 4. 脚本末尾自动重启 Gateway
 5. 脚本执行完毕后，由 Agent 自动完成：
    - 检查各技能配置状态并展示
@@ -87,4 +93,4 @@ OC_INSTALL_MODE=remote ssh user@host 'bash -s' < \
 | nightly-os-upgrade | 每天 04:00 | 飞书系统运维群 |
 
 - **本地安装**：脚本自动通过 `openclaw cron add` 注册
-- **远程安装**：脚本打印注册命令，**需人工在目标机器上执行**（推送远程后告知）
+- **远程安装**：脚本通过 SSH 到目标机器执行 `openclaw cron add` 注册，注册完成后飞书私信汇报老板
