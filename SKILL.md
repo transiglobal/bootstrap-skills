@@ -1,9 +1,9 @@
 ---
 name: bootstrap-skills
-description: 传米科技 OpenClaw 完整环境初始化工具 v3.0。一键完成：重复检测+安装16个基础技能、Cron Jobs注册（本地自动/远程提示）、git-crypt加密openclaw.json、workspace实时备份。触发词："安装基础技能"、"初始化技能"、"bootstrap skills"、"新机器部署"。
+description: 传米科技 OpenClaw 完整环境初始化工具 v3.1。一键完成：重复检测+安装14个基础技能、Dreaming+Memory-Wiki插件配置、Cron Jobs注册（本地自动/远程提示）、git-crypt加密openclaw.json、workspace实时备份。触发词："安装基础技能"、"初始化技能"、"bootstrap skills"、"新机器部署"。
 ---
 
-# Bootstrap Skills v3.0
+# Bootstrap Skills v3.1
 
 传米科技 OpenClaw 完整环境初始化工具。
 
@@ -12,7 +12,8 @@ description: 传米科技 OpenClaw 完整环境初始化工具 v3.0。一键完�
 | 阶段 | 内容 |
 |------|------|
 | 0 | 依赖检查与自动安装（git/git-crypt/gpg/inotifywait）|
-| 1 | 重复技能检测 + 安装 16 个基础技能 |
+| 1 | 重复技能检测 + 安装 14 个基础技能 |
+| 1.5 | 配置 Dreaming + Memory-Wiki 插件（要求 OpenClaw >= 2026.4） |
 | 2 | 部署 Cron 脚本 + 注册定时任务（本地自动/远程提示）|
 | 3 | git-crypt 加密 + openclaw.json 软链接 |
 | 4 | Gitea 仓库自动创建 + 推送 + inotify 实时同步 |
@@ -31,13 +32,24 @@ description: 传米科技 OpenClaw 完整环境初始化工具 v3.0。一键完�
 - Access Token：需具有 `repo` 权限（创建仓库 + 推送）
 - 仓库名：自动使用 `openclaw-workspace`（不存在则自动创建）
 
-## 安装的技能（16 个）
+## 安装的技能（14 个）+ 插件配置
 
-### global skills（11 个）
-agent-browser、feishu-send-file、find-skills、lobehub-skills-search-engine、mcporter、openclaw-skills-smart-agent-memory、self-improving-agent、skillhub-preference、tavily-search-pro、proactive-agent、feishu-approval
+### global skills（9 个）
+agent-browser、feishu-send-file、find-skills、lobehub-skills-search-engine、mcporter、skillhub-preference、tavily-search-pro、proactive-agent、feishu-approval
 
 ### workspace skills（5 个）
 config-guardian、openclaw-cli、runesleo-systematic-debugging、safe-install、skill-vetter
+
+### 插件配置（阶段 1.5）
+
+**要求**：OpenClaw >= 2026.4
+
+| 插件 | 配置内容 |
+|------|---------|
+| memory-core (Dreaming) | 三阶段记忆整理（Light→REM→Deep），每天 04:30 自动运行 |
+| memory-wiki | Bridge 模式联动 memory-core，vault 存储在 ~/.openclaw/wiki/main，renderMode=obsidian |
+
+> `openclaw-skills-smart-agent-memory` 和 `self-improving-agent` 已被移除，功能由 Dreaming + Memory-Wiki 替代。
 
 ## 用法
 

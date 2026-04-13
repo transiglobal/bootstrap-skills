@@ -121,10 +121,8 @@ else
     "lobehub-skills-search-engine|lobehub-skills-search-engine|技能搜索引擎|lobehub|global"
     "mcporter|mcporter|MCP服务器管理|mcporter|global"
     "openclaw-cli|openclaw-cli|CLI命令参考|openclaw-cli|workspace"
-    "openclaw-skills-smart-agent-memory|openclaw-skills-smart-agent-memory|长期记忆系统|smart-agent-memory|global"
     "runesleo-systematic-debugging|runesleo-systematic-debugging|系统化调试|systematic-debug|workspace"
     "safe-install|safe-install|安全安装工作流|safe-install|workspace"
-    "self-improving-agent|self-improving-agent|自我改进|self-improv|global"
     "skill-vetter|skill-vetter|技能安全审查|skill-vetter|workspace"
     "skillhub-preference|skillhub-preference|技能市场偏好|skillhub|global"
     "tavily-search-pro|tavily-search-pro|Tavily高级搜索|tavily|global"
@@ -567,28 +565,30 @@ fi
 info "阶段 5：技能配置..."
 echo ""
 
-# ── 5.1 smart-agent-memory：初始化 SQLite 数据库 ──────────
-SAM_DIR="$HOME/.openclaw/workspace/skills/openclaw-skills-smart-agent-memory"
-SAM_CLI="${SAM_DIR}/scripts/memory-cli.js"
-if [ -d "$SAM_DIR" ] && command -v node &>/dev/null; then
-  if node "$SAM_CLI" index &>/dev/null 2>&1; then
-    log "smart-agent-memory：SQLite 数据库已初始化"
-  else
-    warn "smart-agent-memory：初始化失败，请检查 Node.js 版本（需 >= 18）"
-  fi
-elif [ -d "$SAM_DIR" ]; then
-  warn "smart-agent-memory：未找到 node，跳过初始化（需手动运行：node ${SAM_CLI} index）"
-fi
+# ── 5.1 Dreaming + Memory-Wiki 插件配置 ────────────────
+# 要求 OpenClaw >= 2026.4
+OC_VERSION=$(openclaw --version 2>/dev/null | grep -oP '\d{4}\.\d+' | head -1)
+OC_MAJOR=$(echo "$OC_VERSION" | cut -d. -f1)
+OC_MINOR=$(echo "$OC_VERSION" | cut -d. -f2)
 
-# ── 5.2 self-improving-agent：创建 .learnings 目录 ────────
-if [ -d "$HOME/.openclaw/workspace/skills/self-improving-agent" ]; then
-  mkdir -p "$HOME/.openclaw/workspace/.learnings"
-  for f in LEARNINGS.md ERRORS.md FEATURE_REQUESTS.md; do
-    if [ ! -f "$HOME/.openclaw/workspace/.learnings/$f" ]; then
-      echo "# ${f%.md}" > "$HOME/.openclaw/workspace/.learnings/$f"
-    fi
-  done
-  log "self-improving-agent：.learnings/ 目录已初始化"
+if [ -n "$OC_VERSION" ] && ([ "$OC_MAJOR" -gt 2026 ] || ([ "$OC_MAJOR" -eq 2026 ] && [ "$OC_MINOR" -ge 4 ])); then
+  info "OpenClaw $OC_VERSION 支持 Dreaming + Memory-Wiki，正在配置..."
+  
+  # 检测当前配置中是否已有相关设置
+  OC_CONFIG="$HOME/.openclaw/openclaw.json"
+  if [ -f "$OC_CONFIG" ]; then
+    # 如果 Agent 可用，由 Agent 通过 gateway config.patch 配置
+    # 这里只输出提示，实际配置由安装后的 Agent 完成
+    info "Dreaming 配置：将由 Agent 通过 gateway config.patch 完成"
+    info "  → plugins.entries.memory-core.config.dreaming"
+    info "  → plugins.entries.memory-wiki（含 vault.renderMode=obsidian）"
+    log "Dreaming + Memory-Wiki：配置提示已生成（Agent 将自动完成）"
+  else
+    warn "未找到 openclaw.json，跳过插件配置"
+  fi
+else
+  warn "OpenClaw ${OC_VERSION:-未知} 不支持 Dreaming + Memory-Wiki（需要 >= 2026.4）"
+  warn "跳过插件配置，请升级 OpenClaw 后手动配置"
 fi
 
 # ── 5.3 proactive-agent：复制 assets 到 workspace ─────────
@@ -725,8 +725,7 @@ if [ -z "${SKIP_GITEA:-}" ]; then
 else
   echo "  ⚠  workspace 备份跳过（未提供 Gitea 配置）"
 fi
-echo "  ✅ smart-agent-memory 记忆库初始化"
-echo "  ✅ self-improving-agent .learnings 目录"
+echo "  ✅ Dreaming + Memory-Wiki 插件配置（需 >= 2026.4）"
 echo "  ✅ proactive-agent assets + SESSION-STATE.md + working-buffer.md"
 echo "  ✅ 各技能 .git 目录已清除（变为纯文件快照）"
 echo "  ✅ Gateway 已重启"
