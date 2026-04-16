@@ -118,13 +118,12 @@ else
   elif [ -n "$TOKEN_A" ]; then
     GITEA_NAMESPACE=$(curl -sf -H "Authorization: token ${TOKEN_A}" "https://git.moguyn.cn/api/v1/user" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('login',''))" 2>/dev/null)
     if [ -z "$GITEA_NAMESPACE" ]; then
-      warn "无法获取 Gitea 用户名，默认使用 transiglobal"
-      GITEA_NAMESPACE="transiglobal"
+      fail "无法通过 API 获取 Gitea 用户名，请检查 OC_TOKEN_A 是否有效，或手动设置 GITEA_NAMESPACE 环境变量"
     else
       info "Gitea 命名空间：${GITEA_NAMESPACE}（当前 token 用户）"
     fi
   else
-    GITEA_NAMESPACE="transiglobal"
+    fail "未提供 OC_TOKEN_A，无法确定 Gitea 命名空间，请设置 OC_TOKEN_A 或 GITEA_NAMESPACE 环境变量"
   fi
   # 技能列表（格式：目录名|仓库名|功能描述|关键词|安装路径）
   SKILLS=(
@@ -327,7 +326,7 @@ cd "$HOME/.openclaw/workspace"
 if [ ! -d ".git" ]; then
   git init
   git config user.name "OpenClaw Bot"
-  git config user.email "openclaw-bot@${GITEA_NAMESPACE}.local"
+  git config user.email "openclaw-${HOSTNAME_SAFE}@${GITEA_NAMESPACE}.local"
   log "初始化 Git 仓库"
 fi
 

@@ -25,7 +25,7 @@ NO_PUSH=false
 GITEA_NAMESPACE="${GITEA_NAMESPACE:-}"
 if [ -z "$GITEA_NAMESPACE" ] && [ -n "$TOKEN_A" ]; then
   GITEA_NAMESPACE=$(curl -sf -H "Authorization: token ${TOKEN_A}" "https://git.moguyn.cn/api/v1/user" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('login',''))" 2>/dev/null)
-  [ -z "$GITEA_NAMESPACE" ] && GITEA_NAMESPACE="transiglobal"
+  [ -z "$GITEA_NAMESPACE" ] && fail "无法获取 Gitea 命名空间，请设置 GITEA_NAMESPACE 或 OC_TOKEN_A 环境变量"
 fi
 
 usage() {
