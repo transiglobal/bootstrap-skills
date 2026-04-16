@@ -133,5 +133,5 @@ bash ~/.openclaw/workspace/skills/bootstrap-skills/scripts/install-skills.sh
 | nightly-os-upgrade | 每天 04:00 | 飞书系统运维群 |
 
 - **注册方式**：脚本输出提示，由安装后的 Agent 通过 `cron` 工具注册（isolated + agentTurn）
-- **本地安装**：Agent 读取脚本输出提示后自动完成注册
-- **远程安装**：目标机器的 Agent 在启动后自动完成注册
+- **本地安装**：脚本输出提示，由安装后的 Agent 通过 `cron` 工具注册（isolated + agentTurn）
+- **远程安装**：脚本通过 SSH 在目标机器执行 `openclaw cron add`（正确参数），自动注册

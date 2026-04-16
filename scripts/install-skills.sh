@@ -262,13 +262,44 @@ except:
       info "目标环境已授权用户：${remote_report_to}"
     fi
 
-    # 远程模式同样由目标 Agent 通过 cron 工具注册
-    info "Cron Jobs 将由目标机器的 Agent 通过 cron 工具注册"
-    info "  → nightly-security-audit（每天 03:00 Asia/Shanghai）"
-    info "  → nightly-os-upgrade（每天 04:00 Asia/Shanghai）"
-    log "Cron Jobs：注册提示已生成（目标 Agent 将自动完成）"
+    # 远程模式：通过 SSH 使用正确的 CLI 参数注册
+    REMOTE_SCRIPTS_DIR="$HOME/.openclaw/workspace/scripts"
+    REMOTE_AUDIT="$REMOTE_SCRIPTS_DIR/nightly-security-audit.sh"
+    REMOTE_UPGRADE="$REMOTE_SCRIPTS_DIR/nightly-os-upgrade.sh"
+
+    $CRON_SSH "openclaw cron add \\\
+      --name 'nightly-security-audit' \\\
+      --cron '0 3 * * *' \\\
+      --tz 'Asia/Shanghai' \\\
+      --session isolated \\\
+      --message '执行安全巡检脚本: OC_CRON_REPORT_TO=${remote_report_to} bash ${REMOTE_AUDIT}' \\\
+      --tools exec,read,write \\\
+      --announce \\\
+      --channel feishu \\\
+      --to 'user:${remote_report_to}' \\\
+      --wake skip \\\
+      2>&1" &
+    PID1=$!
+
+    $CRON_SSH "openclaw cron add \\\
+      --name 'nightly-os-upgrade' \\\
+      --cron '0 4 * * *' \\\
+      --tz 'Asia/Shanghai' \\\
+      --session isolated \\\
+      --message '执行系统升级脚本: OC_CRON_REPORT_TO=${remote_report_to} bash ${REMOTE_UPGRADE}' \\\
+      --tools exec,read,write \\\
+      --announce \\\
+      --channel feishu \\\
+      --to 'user:${remote_report_to}' \\\
+      --wake skip \\\
+      2>&1" &
+    PID2=$!
+
+    wait $PID1 $PID2 2>/dev/null
+    log "Cron Jobs 远程注册完成"
   fi
 fi
+
 
 
 # ============================================================
