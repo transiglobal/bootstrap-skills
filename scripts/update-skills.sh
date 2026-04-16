@@ -21,6 +21,13 @@ TOKEN_A="${OC_TOKEN_A:-}"
 DRY_RUN=false
 NO_PUSH=false
 
+# 动态获取 Gitea 命名空间（优先环境变量，否则通过 API 获取当前 token 用户名）
+GITEA_NAMESPACE="${GITEA_NAMESPACE:-}"
+if [ -z "$GITEA_NAMESPACE" ] && [ -n "$TOKEN_A" ]; then
+  GITEA_NAMESPACE=$(curl -sf -H "Authorization: token ${TOKEN_A}" "https://git.moguyn.cn/api/v1/user" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('login',''))" 2>/dev/null)
+  [ -z "$GITEA_NAMESPACE" ] && GITEA_NAMESPACE="transiglobal"
+fi
+
 usage() {
   echo "用法："
   echo "  $0                          # 交互模式"
@@ -30,7 +37,8 @@ usage() {
   echo "  $0 --all --no-push          # 更新但不推送到私有库"
   echo ""
   echo "环境变量："
-  echo "  OC_TOKEN_A    传米科技私有库 Token（推送时需要）"
+  echo "  OC_TOKEN_A    私有库 Token（推送时需要）"
+  echo "  GITEA_NAMESPACE  Gitea 命名空间（默认：当前 token 用户名）"
   echo "  https_proxy   代理（访问 GitHub 时可能需要）"
   exit 0
 }
@@ -212,14 +220,14 @@ push_to_private() {
     return 1
   fi
 
-  info "推送到私有库 git.moguyn.cn/transiglobal/${private_repo}..."
+  info "推送到私有库 git.moguyn.cn/${GITEA_NAMESPACE}/${private_repo}..."
   local push_tmp=$(mktemp -d)
-  if git clone --depth=1 "https://${TOKEN_A}@git.moguyn.cn/transiglobal/${private_repo}.git" "$push_tmp" 2>/dev/null; then
+  if git clone --depth=1 "https://${TOKEN_A}@git.moguyn.cn/${GITEA_NAMESPACE}/${private_repo}.git" "$push_tmp" 2>/dev/null; then
     rsync -a --delete --exclude='.git' "$src_dir/" "$push_tmp/"
     cd "$push_tmp"
     git add -A
     git config user.name "OpenClaw Bot" 2>/dev/null
-    git config user.email "bot@transiglobal.com" 2>/dev/null
+    git config user.email "openclaw-bot@${GITEA_NAMESPACE}.local" 2>/dev/null
     if git diff --cached --quiet 2>/dev/null; then
       info "私有库已是最新，无需推送"
       cd - &>/dev/null
@@ -410,7 +418,7 @@ update_skill() {
       echo "# 技能更新备份：$dir_name"
       echo "# 时间：$(date '+%Y-%m-%d %H:%M:%S')"
       echo "# 第三方来源：$source_url"
-      echo "# 私有库：git.moguyn.cn/transiglobal/${private_repo}"
+      echo "# 私有库：git.moguyn.cn/${GITEA_NAMESPACE}/${private_repo}"
       echo ""
       echo "## 本地修改文件（已自动保留）"
       for f in "${local_only_mods[@]:-}"; do [ -n "$f" ] && echo "- $f"; done

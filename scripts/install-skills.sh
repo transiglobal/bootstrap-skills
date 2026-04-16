@@ -112,6 +112,20 @@ fi
 if [ -z "$TOKEN_A" ]; then
   warn "未提供 Token，跳过技能安装阶段"
 else
+  # 动态获取 Gitea 命名空间（优先环境变量，否则通过 API 获取当前 token 用户名）
+  if [ -n "${GITEA_NAMESPACE:-}" ]; then
+    info "使用环境变量 GITEA_NAMESPACE=${GITEA_NAMESPACE}"
+  elif [ -n "$TOKEN_A" ]; then
+    GITEA_NAMESPACE=$(curl -sf -H "Authorization: token ${TOKEN_A}" "https://git.moguyn.cn/api/v1/user" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('login',''))" 2>/dev/null)
+    if [ -z "$GITEA_NAMESPACE" ]; then
+      warn "无法获取 Gitea 用户名，默认使用 transiglobal"
+      GITEA_NAMESPACE="transiglobal"
+    else
+      info "Gitea 命名空间：${GITEA_NAMESPACE}（当前 token 用户）"
+    fi
+  else
+    GITEA_NAMESPACE="transiglobal"
+  fi
   # 技能列表（格式：目录名|仓库名|功能描述|关键词|安装路径）
   SKILLS=(
     "agent-browser|agent-browser|浏览器自动化|browser|global"
@@ -171,7 +185,7 @@ else
     
     # 克隆技能（克隆后移除 .git 子目录，避免被识别为 submodule 导致 git add 失败）
     mkdir -p "$base_dir"
-    if git clone --depth=1 "https://${TOKEN_A}@git.moguyn.cn/transiglobal/${repo}.git" "$dest" &>/dev/null; then
+    if git clone --depth=1 "https://${TOKEN_A}@git.moguyn.cn/${GITEA_NAMESPACE}/${repo}.git" "$dest" &>/dev/null; then
       rm -rf "${dest}/.git"
       log "安装成功：${dir_name}"
       ((SUCCESS++)) || true
@@ -313,7 +327,7 @@ cd "$HOME/.openclaw/workspace"
 if [ ! -d ".git" ]; then
   git init
   git config user.name "OpenClaw Bot"
-  git config user.email "bot@transiglobal.com"
+  git config user.email "openclaw-bot@${GITEA_NAMESPACE}.local"
   log "初始化 Git 仓库"
 fi
 
@@ -328,7 +342,7 @@ Key-Length: 4096
 Subkey-Type: RSA
 Subkey-Length: 4096
 Name-Real: ${HOSTNAME_SAFE}
-Name-Email: openclaw-${HOSTNAME_SAFE}@transiglobal.com
+Name-Email: openclaw-${HOSTNAME_SAFE}@${GITEA_NAMESPACE}.local
 Expire-Date: 0
 EOF
   gpg --batch --generate-key /tmp/gpg-batch.conf 2>&1 | tail -3
@@ -562,6 +576,58 @@ else
   warn "跳过插件配置，请升级 OpenClaw 后手动配置"
 fi
 
+# ── 5.2 QMD Memory Backend 配置 ────────────────────────
+# 要求 OpenClaw >= 2026.4 + npm 全局安装 @tobilu/qmd
+info "检查 QMD Memory Backend..."
+if command -v qmd &>/dev/null; then
+  QMD_VERSION=$(qmd --version 2>/dev/null || echo "unknown")
+  log "QMD 已安装：${QMD_VERSION}"
+else
+  warn "QMD 未安装，正在通过 npm 安装..."
+  if npm install -g @tobilu/qmd &>/dev/null; then
+    log "QMD 安装成功"
+  else
+    warn "QMD 安装失败，Agent 将尝试手动配置"
+  fi
+fi
+
+# 写入环境变量到 ~/.bashrc（防止 Vulkan 编译失败 + 国内镜像）
+BASHRC="$HOME/.bashrc"
+if [ -f "$BASHRC" ]; then
+  # NODE_LLAMA_CPP_GPU=false（无 GPU 时必须）
+  if ! grep -q "NODE_LLAMA_CPP_GPU" "$BASHRC" 2>/dev/null; then
+    echo "" >> "$BASHRC"
+    echo "# QMD: 强制 CPU 模式，跳过 Vulkan 编译" >> "$BASHRC"
+    echo "export NODE_LLAMA_CPP_GPU=false" >> "$BASHRC"
+    log "已写入 NODE_LLAMA_CPP_GPU=false 到 ~/.bashrc"
+  else
+    log "NODE_LLAMA_CPP_GPU 已在 ~/.bashrc 中"
+  fi
+  # HF_ENDPOINT（国内镜像，可选）
+  if ! grep -q "HF_ENDPOINT" "$BASHRC" 2>/dev/null; then
+    echo "# QMD: 国内 HuggingFace 镜像" >> "$BASHRC"
+    echo "export HF_ENDPOINT=https://hf-mirror.com" >> "$BASHRC"
+    log "已写入 HF_ENDPOINT 到 ~/.bashrc"
+  else
+    log "HF_ENDPOINT 已在 ~/.bashrc 中"
+  fi
+fi
+
+info "QMD 配置：将由 Agent 通过 gateway config.patch 完成："
+info "  → memory.backend: \"qmd\""
+info "  → memory.qmd.searchMode: \"search\" (BM25，适合 CPU)"
+info "  → memory.qmd.limits.timeoutMs: 30000"
+info "  → memory.qmd.scope: 开放 direct + group 搜索"
+info "  → 首次需要运行 qmd embed 下载模型（约 2GB）"
+info ""
+info "⚠️  关键注意事项："
+info "  • OpenClaw 的 QMD 路径: ~/.openclaw/agents/<agentId>/qmd/（非 ~/.cache/qmd/）"
+info "  • 首次 embed 会下载 3 个 GGUF 模型 + 编译 llama.cpp（5-10 分钟）"
+info "  • 无 GPU 必须设 NODE_LLAMA_CPP_GPU=false"
+info "  • searchMode \"query\" (混合搜索) CPU 太慢，建议用 \"search\" (BM25)"
+info "  • bridge \"0 exported artifacts\" 是已知状态，不影响 QMD 搜索"
+log "QMD：配置提示已生成（Agent 将自动完成 config.patch + embed）"
+
 # ── 5.3 tavily-search-pro：配置 API Key ───────────────────
 if [ -d "$HOME/.openclaw/workspace/skills/tavily-search-pro" ]; then
   if grep -q "TAVILY_API_KEY" "$HOME/.openclaw/workspace/.env" 2>/dev/null || \
@@ -673,6 +739,7 @@ else
   echo "  ⚠  workspace 备份跳过（未提供 Gitea 配置）"
 fi
 echo "  ✅ Dreaming + Memory-Wiki 插件配置（需 >= 2026.4）"
+echo "  ✅ QMD Memory Backend 环境变量已写入 ~/.bashrc"
 echo "  ✅ 各技能 .git 目录已清除（变为纯文件快照）"
 echo "  ✅ Gateway 已重启"
 echo ""
@@ -689,6 +756,8 @@ if [ "$INSTALL_MODE" = "local" ]; then
 fi
 echo "     - 完成飞书 OAuth 授权（feishu-send-file / feishu-approval）"
 echo "     - mcporter MCP 服务器（如需）"
+echo "     - QMD config.patch（memory.backend + searchMode + timeout + scope）"
+echo "     - QMD 首次 embed（qmd embed，下载约 2GB 模型）"
 if [ -f "$HOME/gpg-backup/openclaw-gpg-private.asc" ]; then
   echo "     - 备份 GPG 私钥到安全位置：~/gpg-backup/openclaw-gpg-private.asc"
 fi
