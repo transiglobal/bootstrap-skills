@@ -126,7 +126,6 @@ else
     "skill-vetter|skill-vetter|技能安全审查|skill-vetter|workspace"
     "skillhub-preference|skillhub-preference|技能市场偏好|skillhub|global"
     "tavily-search-pro|tavily-search-pro|Tavily高级搜索|tavily|global"
-    "proactive-agent|proactive-agent|主动行为框架|proactive|global"
     "feishu-approval|feishu-approval|飞书审批发起|feishu-approval|global"
   )
 
@@ -222,25 +221,13 @@ if [ "$INSTALL_MODE" = "local" ]; then
   if command -v openclaw &>/dev/null; then
     info "注册 Cron Jobs（本地模式）..."
 
-    openclaw cron add \
-      --name "nightly-security-audit" \
-      --schedule "0 3 * * *" \
-      --tz "Asia/Shanghai" \
-      --command "OC_CRON_REPORT_TO=${local_report_to} bash $AUDIT_SCRIPT" \
-      --notify-channel feishu \
-      --to "user:${local_report_to}" \
-      2>&1 | grep -v "^$" || true
-
-    openclaw cron add \
-      --name "nightly-os-upgrade" \
-      --schedule "0 4 * * *" \
-      --tz "Asia/Shanghai" \
-      --command "OC_CRON_REPORT_TO=${local_report_to} bash $UPGRADE_SCRIPT" \
-      --notify-channel feishu \
-      --to "chat:oc_e10aaa9b9dbf9d4d2a42796169b2855e" \
-      2>&1 | grep -v "^$" || true
-
-    log "Cron Jobs 注册完成"
+    # CLI cron 参数已修复：--schedule→--cron, --command→--message, --notify-channel→--channel
+    # 但 openclaw cron add 无法直接执行 shell 脚本，需要 Agent 通过 cron 工具注册
+    # 这里只做提示，实际注册由安装后的 Agent 自动完成（isolated + agentTurn）
+    info "Cron Jobs 将由 Agent 通过 cron 工具注册"
+    info "  → nightly-security-audit（每天 03:00 Asia/Shanghai）"
+    info "  → nightly-os-upgrade（每天 04:00 Asia/Shanghai）"
+    log "Cron Jobs：注册提示已生成（Agent 将自动完成）"
   else
     warn "未找到 openclaw CLI，无法自动注册 Cron Jobs"
   fi
@@ -275,58 +262,11 @@ except:
       info "目标环境已授权用户：${remote_report_to}"
     fi
 
-    $CRON_SSH "openclaw cron add \
-      --name 'nightly-security-audit' \
-      --schedule '0 3 * * *' \
-      --tz 'Asia/Shanghai' \
-      --command 'OC_CRON_REPORT_TO=${remote_report_to} bash $AUDIT_SCRIPT' \
-      --notify-channel feishu \
-      --to 'user:${remote_report_to}' 2>&1" &
-    PID1=$!
-
-    $CRON_SSH "openclaw cron add \
-      --name 'nightly-os-upgrade' \
-      --schedule '0 4 * * *' \
-      --tz 'Asia/Shanghai' \
-      --command 'OC_CRON_REPORT_TO=${remote_report_to} bash $UPGRADE_SCRIPT' \
-      --notify-channel feishu \
-      --to 'user:${remote_report_to}' 2>&1" &
-    PID2=$!
-
-    wait $PID1 $PID2
-    if [ $? -eq 0 ]; then
-      log "Cron Jobs 远程注册完成"
-      # 注册成功后，飞书私信汇报给目标用户
-      FEISHU_APP_ID="cli_a940c6ac02785cd6"
-      FEISHU_APP_SECRET="wxSaKaCSrA1qsPRp47jgobEVKL6b13sP"
-      TOKEN_RESP=$(curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" \
-        -H "Content-Type: application/json" \
-        -d "{"app_id":"$FEISHU_APP_ID","app_secret":"$FEISHU_APP_SECRET"}")
-      TOKEN=$(echo "$TOKEN_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tenant_access_token',''))" 2>/dev/null)
-      if [ -n "$TOKEN" ]; then
-        PAYLOAD=$(python3 -c "
-import json
-msg = {
-  'receive_id': '$remote_report_to',
-  'msg_type': 'post',
-  'content': json.dumps({
-    'zh_cn': {
-      'title': '✅ Cron Jobs 注册完成',
-      'content': [[{'tag': 'text', 'text': '目标机器：${OC_REMOTE_HOST}\n已注册任务：\n  • nightly-security-audit（每天 03:00）\n  • nightly-os-upgrade（每天 04:00）\n\n任务执行结果将在每天定时发送到此私信。'}]]
-    }
-  })
-}
-print(json.dumps(msg))
-" 2>/dev/null)
-        curl -s -X POST "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id" \
-          -H "Authorization: Bearer $TOKEN" \
-          -H "Content-Type: application/json" \
-          -d "$PAYLOAD" > /dev/null 2>&1
-        log "飞书私信已发送"
-      fi
-    else
-      warn "Cron Jobs 远程注册失败，请检查目标机器的 openclaw 是否正常"
-    fi
+    # 远程模式同样由目标 Agent 通过 cron 工具注册
+    info "Cron Jobs 将由目标机器的 Agent 通过 cron 工具注册"
+    info "  → nightly-security-audit（每天 03:00 Asia/Shanghai）"
+    info "  → nightly-os-upgrade（每天 04:00 Asia/Shanghai）"
+    log "Cron Jobs：注册提示已生成（目标 Agent 将自动完成）"
   fi
 fi
 
@@ -591,31 +531,7 @@ else
   warn "跳过插件配置，请升级 OpenClaw 后手动配置"
 fi
 
-# ── 5.3 proactive-agent：复制 assets 到 workspace ─────────
-PROACTIVE_DIR="$HOME/.openclaw/workspace/skills/proactive-agent"
-if [ -d "${PROACTIVE_DIR}/assets" ]; then
-  ASSETS_COPIED=0
-  for asset in "${PROACTIVE_DIR}/assets/"*.md; do
-    fname=$(basename "$asset")
-    # 只复制不存在的文件，避免覆盖用户已有的配置
-    if [ ! -f "$HOME/.openclaw/workspace/$fname" ]; then
-      cp "$asset" "$HOME/.openclaw/workspace/$fname"
-      ((ASSETS_COPIED++)) || true
-    fi
-  done
-  # 创建 working-buffer.md
-  mkdir -p "$HOME/.openclaw/workspace/memory"
-  touch "$HOME/.openclaw/workspace/memory/working-buffer.md"
-  # 创建 SESSION-STATE.md
-  if [ ! -f "$HOME/.openclaw/workspace/SESSION-STATE.md" ]; then
-    echo "# SESSION-STATE" > "$HOME/.openclaw/workspace/SESSION-STATE.md"
-  fi
-  log "proactive-agent：assets 已复制（$ASSETS_COPIED 个新文件），SESSION-STATE.md 和 working-buffer.md 已创建"
-elif [ -d "$PROACTIVE_DIR" ]; then
-  warn "proactive-agent：assets 目录不存在，跳过（请手动复制 assets/*.md 到 workspace）"
-fi
-
-# ── 5.4 tavily-search-pro：配置 API Key ───────────────────
+# ── 5.3 tavily-search-pro：配置 API Key ───────────────────
 if [ -d "$HOME/.openclaw/workspace/skills/tavily-search-pro" ]; then
   if grep -q "TAVILY_API_KEY" "$HOME/.openclaw/workspace/.env" 2>/dev/null || \
      [ -n "${TAVILY_API_KEY:-}" ]; then
@@ -726,7 +642,6 @@ else
   echo "  ⚠  workspace 备份跳过（未提供 Gitea 配置）"
 fi
 echo "  ✅ Dreaming + Memory-Wiki 插件配置（需 >= 2026.4）"
-echo "  ✅ proactive-agent assets + SESSION-STATE.md + working-buffer.md"
 echo "  ✅ 各技能 .git 目录已清除（变为纯文件快照）"
 echo "  ✅ Gateway 已重启"
 echo ""

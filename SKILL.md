@@ -82,6 +82,8 @@ bash ~/.openclaw/workspace/skills/bootstrap-skills/scripts/install-skills.sh
 
 ## Agent 调用指南
 
+### 安装技能
+
 用户说"安装基础技能"、"初始化技能"、"新机器部署"时：
 1. 询问是本地安装还是远程安装
 2. 提醒准备好：
@@ -92,19 +94,44 @@ bash ~/.openclaw/workspace/skills/bootstrap-skills/scripts/install-skills.sh
    - 本地：`OC_INSTALL_MODE=local bash install-skills.sh`
    - 远程：`OC_INSTALL_MODE=remote OC_REMOTE_HOST=<目标IP> OC_REMOTE_USER=<用户> bash install-skills.sh`
      - 脚本自动从目标机器的 `~/.openclaw/openclaw.json` 获取 `channels.feishu.allowFrom[0]` 作为飞书通知目标用户
-     - 注册完成后飞书私信汇报给目标用户
+     - 注册完成后由目标机器的 Agent 通过 cron 工具完成
 4. 脚本末尾自动重启 Gateway
 5. 脚本执行完毕后，由 Agent 自动完成：
    - 检查各技能配置状态并展示
    - 如提供了 Tavily API Key，写入配置
 6. 将"待完成后"部分展示给用户
 
+### 更新技能（保留本地修改）
+
+用户说"更新技能"、"升级技能"、"技能有新版"时：
+1. 确认要更新哪个技能（或全部）
+2. 需要 **Token A**（传米科技提供）
+3. 执行 `update-skills.sh`：
+   - 交互模式（推荐）：`bash update-skills.sh`
+   - 更新单个：`OC_TOKEN_A=<token> bash update-skills.sh -s <skill-name>`
+   - 全部更新：`OC_TOKEN_A=<token> bash update-skills.sh --all`
+   - 预览变更：`OC_TOKEN_A=<token> bash update-skills.sh --all --dry-run`
+4. 脚本自动完成：
+   - 克隆上游最新版本到临时目录
+   - diff 对比本地与上游的差异
+   - 备份本地修改文件到 `~/.openclaw/workspace/.skill-backups/`
+   - 应用上游更新
+   - 自动恢复无冲突的本地修改
+   - 标记需要手动合并的冲突文件
+5. 更新后建议重启 Gateway：`openclaw gateway restart`
+
+**关键机制**：
+- 纯本地修改（上游没改的文件）→ 自动恢复
+- 冲突文件（本地和上游都改了）→ 保留上游版本，本地备份到 `.skill-backups/`
+- 每次更新生成 `UPDATE_REPORT.md`（变更清单 + 合并命令）
+
 ## Cron Jobs 说明
 
 | 任务 | 计划（Asia/Shanghai）| 推送目标 |
 |------|---------------------|---------|
-| nightly-security-audit | 每天 03:00 | 飞书私聊 → 老板 |
+| nightly-security-audit | 每天 03:00 | 飞书私聊 → 用户 |
 | nightly-os-upgrade | 每天 04:00 | 飞书系统运维群 |
 
-- **本地安装**：脚本自动通过 `openclaw cron add` 注册
-- **远程安装**：脚本通过 SSH 到目标机器执行 `openclaw cron add` 注册，注册完成后飞书私信汇报老板
+- **注册方式**：脚本输出提示，由安装后的 Agent 通过 `cron` 工具注册（isolated + agentTurn）
+- **本地安装**：Agent 读取脚本输出提示后自动完成注册
+- **远程安装**：目标机器的 Agent 在启动后自动完成注册
