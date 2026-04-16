@@ -277,7 +277,7 @@ except:
       --announce \\\
       --channel feishu \\\
       --to 'user:${remote_report_to}' \\\
-      --wake skip \\\
+      --wake next-heartbeat \\\
       2>&1" &
     PID1=$!
 
@@ -291,7 +291,7 @@ except:
       --announce \\\
       --channel feishu \\\
       --to 'user:${remote_report_to}' \\\
-      --wake skip \\\
+      --wake next-heartbeat \\\
       2>&1" &
     PID2=$!
 
