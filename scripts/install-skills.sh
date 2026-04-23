@@ -652,6 +652,98 @@ if [ -d "$HOME/.openclaw/workspace/skills/tavily-search-pro" ]; then
   fi
 fi
 
+# ── 5.4 企业微信 CLI（wecom-cli）安装与配置 ─────────────
+info "检查企业微信 CLI（wecom-cli）..."
+
+WECOM_CLI_CONFIG_DIR="${HOME}/.config/wecom"
+
+# 安装 CLI 工具
+if command -v wecom-cli &>/dev/null; then
+  WECOM_CLI_VER=$(wecom-cli --version 2>/dev/null || echo "unknown")
+  log "wecom-cli 已安装：${WECOM_CLI_VER}"
+else
+  info "安装 wecom-cli CLI 工具..."
+  if npm install -g @wecom/cli &>/dev/null; then
+    log "wecom-cli CLI 安装成功"
+  else
+    warn "wecom-cli CLI 安装失败，请手动执行: npm install -g @wecom/cli"
+  fi
+fi
+
+# 安装官方 Skills（6 个：contact/doc/meeting/msg/schedule/todo）
+WECOM_SKILLS_DIR="${HOME}/.agents/skills"
+if [ -d "${WECOM_SKILLS_DIR}/wecomcli-contact" ]; then
+  log "wecom-cli Skills 已安装（6 个）"
+else
+  info "安装 wecom-cli 官方 Skills..."
+  if npx skills add WeComTeam/wecom-cli -y -g &>/dev/null; then
+    log "wecom-cli Skills 安装成功（wecomcli-contact/doc/meeting/msg/schedule/todo）"
+  else
+    warn "wecom-cli Skills 安装失败，请手动执行: npx skills add WeComTeam/wecom-cli -y -g"
+  fi
+fi
+
+# 配置凭证
+if [ -f "${WECOM_CLI_CONFIG_DIR}/bot.enc" ]; then
+  log "wecom-cli 凭证已配置"
+else
+  echo ""
+  info "wecom-cli 需要企业微信机器人 Bot ID 和 Secret 进行配置"
+  info "获取方式：https://open.work.weixin.qq.com/help2/pc/cat?doc_id=21677"
+
+  # 支持环境变量传入
+  if [ -n "${WECOM_BOT_ID:-}" ] && [ -n "${WECOM_BOT_SECRET:-}" ]; then
+    info "使用环境变量提供的 Bot ID 和 Secret"
+    # 尝试用 pexpect 自动配置（需要 PTY）
+    if command -v python3 &>/dev/null && python3 -c "import pexpect" 2>/dev/null; then
+      info "正在自动配置凭证..."
+      python3 -c "
+import pexpect, sys, time
+p = pexpect.spawn('wecom-cli init', timeout=60, encoding='utf-8')
+p.expect('请选择企微机器人接入方式', timeout=10)
+time.sleep(0.5)
+p.send('\x1b[B')  # 下箭头选手动模式
+time.sleep(0.3)
+p.send('\r')
+time.sleep(1)
+p.expect('Bot ID', timeout=10)
+time.sleep(0.3)
+p.sendline('${WECOM_BOT_ID}')
+time.sleep(0.5)
+p.expect('Secret', timeout=10)
+time.sleep(0.3)
+p.sendline('${WECOM_BOT_SECRET}')
+time.sleep(3)
+p.expect(pexpect.EOF, timeout=30)
+" 2>/dev/null
+      if [ -f "${WECOM_CLI_CONFIG_DIR}/bot.enc" ]; then
+        log "wecom-cli 凭证配置成功（自动模式）"
+      else
+        warn "wecom-cli 自动配置失败，请手动执行: wecom-cli init"
+      fi
+    else
+      warn "缺少 pexpect，无法自动配置，请手动执行: wecom-cli init"
+    fi
+  else
+    # 手动配置提示
+    echo ""
+    info "请在终端中手动执行以下命令配置凭证："
+    info "  wecom-cli init"
+    info "  → 选择「手动输入 Bot ID 和 Secret」"
+    info "  → 输入 Bot ID 和 Secret"
+    echo ""
+    info "或在 Agent 调用时提供 WECOM_BOT_ID / WECOM_BOT_SECRET 环境变量"
+    echo ""
+    info "配置凭证后，需在企业微信中授权各品类权限："
+    info "  📄 文档:   type=1"
+    info "  📅 日程:   type=2"
+    info "  🎥 会议:   type=3"
+    info "  💬 消息+通讯录: type=4（共享权限入口）"
+    info "  ✅ 待办:   type=5"
+    info "  授权入口: https://work.weixin.qq.com/ai/aiHelper/authorizationPage?str_aibotid=<BOT_ID>&type=<TYPE>&from=chat&forceInnerBrowser=1"
+  fi
+fi
+
 # ── 5.5 mcporter：提示配置 MCP 服务器 ─────────────────────
 if [ -d "$HOME/.openclaw/workspace/skills/mcporter" ]; then
   MCP_CFG="$HOME/.openclaw/config/mcp-servers.json"
