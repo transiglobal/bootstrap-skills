@@ -1,6 +1,6 @@
 ---
-name: bootstrap-skills
-description: 传米科技 OpenClaw 完整环境初始化工具 v3.2。一键完成：重复检测+安装14个基础技能、Dreaming+Memory-Wiki插件配置、Cron Jobs注册（本地自动/远程提示）、git-crypt加密openclaw.json、workspace实时备份。触发词："安装基础技能"、"初始化技能"、"bootstrap skills"、"新机器部署"。
+name: "bootstrap-skills"
+description: "OpenClaw环境初始化：安装基础技能，配置Dreaming、Memory-Wiki、Cron、git-crypt和工作区备份。用于新机器部署。"
 ---
 
 # Bootstrap Skills v3.2

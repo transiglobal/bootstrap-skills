@@ -72,7 +72,7 @@ SKILLS=(
   "ssh-essentials|SSH命令速查|global|clawhub:ssh-essentials|ssh-essentials"
   "tavily-search-pro|Tavily高级搜索|global|clawhub:tavily-search-pro|tavily-search-pro"
   "skill-vetter|技能安全审查|workspace|clawhub:skill-vetter|skill-vetter"
-  "mcporter|MCP服务器管理|global|clawhub:mcporter|mcporter"
+  "mcporter|MCP服务器管理|global|clawhub:@steipete/mcporter|mcporter"
   "config-guardian|配置文件保护|workspace|clawhub:config-guardian|config-guardian"
   "openclaw-cli|CLI命令参考|workspace|clawhub:openclaw-cli|openclaw-cli"
   "runesleo-systematic-debugging|系统化调试|workspace|clawhub:runesleo-systematic-debugging|runesleo-systematic-debugging"
@@ -124,14 +124,40 @@ clone_from_web() {
 clone_from_clawhub() {
   local slug="$1"
   local dest="$2"
+
+  # Owner-qualified refs require the current OpenClaw installer.
+  # Run it under an isolated temporary HOME so the live workspace is untouched.
+  if [[ "$slug" == @*/* ]]; then
+    if ! command -v openclaw &>/dev/null; then
+      warn "未安装 openclaw CLI，跳过限定发布者来源：$slug"
+      return 1
+    fi
+    local isolated_home
+    isolated_home=$(mktemp -d)
+    if HOME="$isolated_home" \
+       OPENCLAW_HOME="$isolated_home" \
+       OPENCLAW_CONFIG_PATH="$isolated_home/openclaw.json" \
+       openclaw skills install "$slug" --acknowledge-clawhub-risk &>/dev/null; then
+      local qualified_name="${slug##*/}"
+      local installed="$isolated_home/.openclaw/workspace/skills/$qualified_name"
+      if [ -d "$installed" ]; then
+        cp -a "$installed/." "$dest/"
+        rm -rf "$isolated_home"
+        return 0
+      fi
+    fi
+    rm -rf "$isolated_home"
+    return 1
+  fi
+
   if ! command -v clawhub &>/dev/null; then
     warn "未安装 clawhub CLI，跳过 clawhub 来源：$slug"
     return 1
   fi
-  # clawhub install 安装到 --workdir/skills/<slug>
-  local workdir=$(mktemp -d)
+  # Legacy unqualified sources retain the existing clawhub flow.
+  local workdir
+  workdir=$(mktemp -d)
   if clawhub --workdir "$workdir" --no-input install "$slug" 2>/dev/null; then
-    # 安装成功，把内容移到 dest
     local installed="$workdir/skills/$slug"
     if [ -d "$installed" ]; then
       cp -a "$installed/." "$dest/"
