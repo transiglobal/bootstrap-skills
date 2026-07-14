@@ -42,10 +42,6 @@
 ### safe-install
 - **触发词**："安装技能"、"安装 skill"、"装一个 skill"
 
-### self-improving-agent
-- **触发词**：无（自动捕获错误和学习）
-- **配置目录**：`workspace/.learnings/`
-
 ### skill-vetter
 - **触发词**：无（由 safe-install 调用）
 
